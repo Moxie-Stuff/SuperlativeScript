@@ -1,4 +1,4 @@
-# 10.0.618
+# 10.0.618-beta
 - Added class support
 - Removed StringTools support
 - Reworked functions
