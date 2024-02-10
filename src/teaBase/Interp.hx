@@ -36,6 +36,7 @@ private enum Stop {
 }
 
 @:keepSub
+@:access(teaBase.Parser)
 @:access(tea.SScript)
 class Interp {
 
@@ -574,12 +575,6 @@ class Interp {
 	}
 
 	function resolve( id : String ) : Dynamic {
-		@:privateAccess if( strictVar && Parser.notAllowedFieldNames.contains(id) )
-		{
-			if( !inBool || !["null", "true", "false"].contains(id) )
-				error(EUnexpected(id));
-		}
-
 		var l = locals.get(id);
 		if( l != null )
 			return l.r;
@@ -673,6 +668,19 @@ class Interp {
 			case CInt32(v): return v;
 			#end
 			}
+		case EInterpString(string, interpolatedString):
+			var s = string.copy();
+			for( i in interpolatedString ) {
+				var str = s[i.index];
+				if( str != null ) {
+					script.parser.inInterp = true;
+					var expr = Std.string(expr(script.parser.parseString(i.str)));
+					script.parser.inInterp = false;
+					str = str.replace(i.str, expr);
+					s[i.index] = str;
+				}
+			}
+			return s.join('');
 		case EIdent(id):
 			strictVar = true;
 			var e = resolve(id);

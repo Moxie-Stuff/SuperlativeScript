@@ -80,6 +80,8 @@ class Parser {
 	**/
 	public var resumeErrors : Bool = false;
 
+	var inInterp : Bool = false;
+
 	// implementation
 	var input : String;
 	var readPos : Int;
@@ -95,14 +97,6 @@ class Parser {
 	var oldTokenMin : Int;
 	var oldTokenMax : Int;
 	var tokens : List<{ min : Int, max : Int, t : Token }>;
-
-	static final notAllowedFieldNames:Array<String> = {
-		var keys = Tools.keys.copy();
-		for (i in ["this", "null", "true", "false"])
-			keys.push(i);
-
-		keys;
-	}
 
 	public function new() {
 		line = 1;
@@ -238,6 +232,7 @@ class Parser {
 	}
 
 	function isBlock(e) {
+		if( inInterp ) return true;
 		if( e == null ) return false;
 		return switch( expr(e) ) {
 		case EClass(_,_): true;
@@ -332,6 +327,76 @@ class Parser {
 		return parseExprNext(mk(EObject(fl),p1));
 	}
 
+	function interpolateString(s:String)  {
+		if( s == null ) error(ECustom("Null Object Reference"));
+		
+		var strings = s.split('$');
+		if( strings.length < 2 )
+			return EConst(CString(s));
+		if( s.startsWith('$') )
+			strings.shift();
+
+		var stringMap:Array< { str : String , index : Int } >  = [];
+		var startIndex:Int = 1;
+		for( i in 0...strings.length ) {
+			var index = s.indexOf(strings[i], startIndex - 1);
+			var split = s.charAt(index - 1);
+
+			if( startIndex == index && startIndex != 1 )
+				startIndex--;
+
+			if( split == '$' && index > 0 ) {
+				var pro = 0;
+				var depth = 0;
+				var string = strings[index - startIndex];
+				var expr = "";
+				var hasBracket = false;
+				if( string != null )
+				{
+					while( true ) {
+						var a = string.charAt(pro);
+						pro++;
+						if( a == "{" )
+						{
+							depth++;
+							if (!hasBracket)
+								hasBracket = true;
+						}
+						else if( a == "}" ) {
+							if( pro < 3 && hasBracket )
+								error(ECustom("Expression cannot be empty"));
+
+							depth--;
+							if (depth <= 0)
+							{
+								expr += "}";
+								break;
+							}
+						}
+
+						if( !hasBracket ) switch a {
+							
+							case "$" | "{" | "}" | " " | '':
+								break;
+							case _:
+						}
+						expr += a;
+						
+					}
+				}
+				if( expr != "" )
+				{ 
+					var length = strings[i].length - expr.length;
+					stringMap.push({ str : expr , index : index - startIndex });
+					startIndex += expr.length; 
+					startIndex += length;
+					if( length < 1 ) startIndex++;
+				}
+			} 	
+		}
+		return EInterpString(strings,stringMap);
+	}
+
 	function parseExpr() {
 		var oldPos = readPos;
 		var tk = token();
@@ -344,6 +409,12 @@ class Parser {
 			
 			return parseExprNext(e);
 		case TConst(c):
+			switch c {
+				case CString(s, true):
+					var e = parseExprNext(mk(interpolateString(s)));
+					return e;
+				case _:
+			}
 			return parseExprNext(mk(EConst(c)));
 		case TPOpen:
 			tk = token();
@@ -420,7 +491,8 @@ class Parser {
 				tk = token();
 				if( tk == TBrClose || (resumeErrors && tk == TEof) )
 					break;
-				push(tk);
+				if( tk != TStatement )
+					push(tk);
 			}
 			return mk(EBlock(a),p1);
 		case TOp(op):
@@ -590,8 +662,6 @@ class Parser {
 			var exprs = [];
 			var classes = [];
 			var ident = getIdent();
-			if( notAllowedFieldNames.contains(ident) )
-				unexpected(TId(ident));
 
 			var token = null; 
 			while( true ) {
@@ -732,13 +802,7 @@ class Parser {
 		case "var" | "final":
 			var tk = token();
 			var ident = switch tk {
-				case TId(s):
-					if (notAllowedFieldNames.contains(s))
-					{
-						error(ECustom('Keyword $s cannot be used as variable name'),tokenMin, tokenMax);
-						null;
-					}
-					else s;
+				case TId(s): s;
 				case TConst(c):
 					switch c {
 						case CInt(_) | CFloat(_):
@@ -996,9 +1060,6 @@ class Parser {
 				t = token();
 				switch( t ) {
 				case TId(id):
-					if( notAllowedFieldNames.contains(id) )
-						unexpected(TId(id));
-					
 					path.push(id);
 				case TOp('*'):
 					isStar = true;
@@ -1660,7 +1721,7 @@ class Parser {
 			case "}".code: return TBrClose;
 			case "[".code: return TBkOpen;
 			case "]".code: return TBkClose;
-			case "'".code, '"'.code: return TConst( CString(readString(char)) );
+			case "'".code, '"'.code: return TConst( CString(readString(char), char==39) );
 			case "?".code: 
 				char = readChar();
 				if( char == '.'.code )

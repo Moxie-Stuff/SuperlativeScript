@@ -319,9 +319,11 @@ class SScript
 		If `key` already exists it will be replaced.
 		@param key Variable name.
 		@param obj The object to set.
+		@param setAsFinal Whether if set the object as final. If set as final, 
+		object will act as a final variable and cannot be changed in script.
 		@return Returns this instance for chaining.
 	**/
-	public function set(key:String, obj:Dynamic):SScript
+	public function set(key:String, obj:Dynamic, ?setAsFinal:Bool = false):SScript
 	{
 		if (_destroyed)
 			return null;
@@ -352,10 +354,16 @@ class SScript
 			}
 			else
 			{
-				if (Type.typeof(obj) == TFunction)
+				if (setAsFinal)
 					interp.finalVariables[key] = obj;
+				
 				else 
-					interp.variables[key] = obj;
+					switch Type.typeof(obj) {
+						case TFunction | TClass(_) | TEnum(_): 
+							interp.finalVariables[key] = obj;
+						case _:
+							interp.variables[key] = obj;
+					}
 			}
 		}
 

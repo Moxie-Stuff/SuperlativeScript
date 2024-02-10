@@ -1,4 +1,5 @@
 Main.hx
 build.hxml
 .DS_Store
+bin/
 **.zip

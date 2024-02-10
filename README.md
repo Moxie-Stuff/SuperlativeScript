@@ -4,37 +4,37 @@
 
 # SScript
 
-SScript is an easy to use Haxe script tool that aims to be simple while supporting all Haxe structures. It aims to be like native Haxe while staying easy to use.
+SuperlativeScript is an easy to use Haxe script tool that aims to be simple while supporting all Haxe structures by Tahir and Gabi. It aims to be like native Haxe while staying easy to use.
 
 ## Contribution
-If you have an issue with SScript or have a suggestion, you can always open an issue here. However, pull requests are NOT welcome and will be ignored.
+If you have an issue with SuperlativeScript or have a suggestion, you can always open an issue here. However, pull requests are NOT welcome and will be ignored.
 
 ## Installation
 `haxelib install SScript`
 
 Enter this command in command prompt to get the latest release from Haxe library.
 
-After installing SScript, don't forget to add it to your Haxe project.
+After installing SuperlativeScript, don't forget to add it to your Haxe project.
 
 ------------
 
 ### OpenFL projects
-Add this to `Project.xml` to add SScript to your OpenFL project:
+Add this to `Project.xml` to add SuperlativeScript to your OpenFL project:
 ```xml
 <haxelib name="SScript"/>
 ```
 ### Haxe Projects
-Add this to `build.hxml` to add SScript to your Haxe build.
+Add this to `build.hxml` to add SuperlativeScript to your Haxe build.
 ```hxml
 -lib SScript
 ```
 
 ## Usage
-To use SScript, you will need a file or a script. Using a file is recommended.
+To use SuperlativeScript, you will need a file or a script. Using a file is recommended.
 
 ### Using without a file
 ```haxe
-var script:tea.SScript = {}; // Create a new SScript class
+var script:tea.SScript = {}; // Create a new SuperlativeScript class
 script.doString("
 	function returnRandom():Float
 		return Math.random() * 100;
@@ -50,7 +50,7 @@ var randomNumber:Float = script.call('returnRandom').returnValue;
 ```
 
 ## Classes
-With SScript 10.0.618, classes are supported in teas and can be accessed from other teas.
+With SuperlativeScript 10.0.618, classes are supported in teas and can be accessed from other teas.
 
 Example:
 ```haxe
@@ -119,7 +119,7 @@ var a = 1;
 ```
 
 ## Using Haxe 4.3.0 Syntaxes
-SScript supports both `?.` and `??` syntaxes including `??=`.
+SuperlativeScript supports both `?.` and `??` syntaxes including `??=`.
 
 ```haxe
 import tea.SScript;
@@ -139,8 +139,8 @@ class Main
 }
 ```
 
-## Extending SScript
-You can create a class extending SScript to customize it better.
+## Extending SuperlativeScript
+You can create a class extending SuperlativeScript to customize it better.
 ```haxe
 class SScriptEx extends tea.SScript
 {  
@@ -189,7 +189,7 @@ trace(call.returnValue, call.exceptions[0]); // null, Float should be Int
 ```
 
 ## Global Variables
-With SScript, you can set variables to all running Tea's.
+With SuperlativeScript, you can set variables to all running Tea's.
 Example:
 
 ```haxe

@@ -24,7 +24,7 @@ package teaBase;
 enum Const {
 	CInt( v : Int );
 	CFloat( f : Float );
-	CString( s : String , ?interpolated:Bool);
+	CString( s : String , ?allowsInterp:Bool);
 	#if !haxe3
 	CInt32( v : haxe.Int32 );
 	#end
@@ -42,6 +42,7 @@ enum ExprDef {
 	EPublic( e : Expr );
 	EPrivate( e : Expr );
 	EStatic( e : Expr , ?inPublic : Bool );
+	EInterpString( strings : Array< String > , interpolatedString : Array< { str : String , index : Int } > );
 	EConst( c : Const );
 	EIdent( v : String );
 	EVar( n : String, finall : Bool , ?t : CType, ?e : Expr );

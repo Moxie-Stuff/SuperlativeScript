@@ -1,8 +1,12 @@
-# 10.0.618-beta
+# 10.0.618
 - Added class support
+- Added string interpolation
+- Added `public` as a shortcut to set global variables in scripts
 - Removed StringTools support
 - Reworked functions
 - Reworked finals
 - Reworked variable initialization
 - Added better check to if, for and while expressions
 - Reworked global variables
+- Added `setAsFinal` option to `set`
+- Removed useless checks
