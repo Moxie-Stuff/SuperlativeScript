@@ -81,6 +81,8 @@ class Interp {
 	var strictVar : Bool = false;
 	var inBool : Bool = false;
 
+	var inCall : Bool = false;
+
 	public inline function setScr(s)
 	{
 		return script = s;
@@ -431,17 +433,17 @@ class Interp {
 
 				for( i in exprs ) {
 					switch Tools.expr(i) {
-						case EVar(_,_,_,_):
+						case EVar(_,_,_,_) | EFunction(_,_,_,_):
 							array.push(i);
 							exprs.remove(i);
 						case EPublic(e):
 							switch e.e {
-								case EVar(_,_,_,_):
+								case EVar(_,_,_,_) | EFunction(_,_,_,_):
 									array.push(i);
 									exprs.remove(i);
 								case EStatic(e,_):
 									switch e.e {
-										case EVar(_,_,_,_):
+										case EVar(_,_,_,_) | EFunction(_,_,_,_):
 											array.push(i);
 											exprs.remove(i);
 										case _:
@@ -451,12 +453,12 @@ class Interp {
 							}
 						case EPrivate(e):
 							switch e.e {
-								case EVar(_,_,_,_):
+								case EVar(_,_,_,_) | EFunction(_,_,_,_):
 									array.push(i);
 									exprs.remove(i);
 								case EStatic(e,_):
 									switch e.e {
-										case EVar(_,_,_,_):
+										case EVar(_,_,_,_) | EFunction(_,_,_,_):
 											array.push(i);
 											exprs.remove(i);
 										case _:
@@ -467,44 +469,7 @@ class Interp {
 						case _:
 					}
 				}
-				for( i in exprs ) {
-					switch Tools.expr(i) {
-						case EFunction(_,_,_,_):
-							array.push(i);
-							exprs.remove(i);
-						case EPublic(e):
-							switch e.e {
-								case EFunction(_,_,_,_):
-									array.push(i);
-									exprs.remove(i);
-								case EStatic(e,_):
-									switch e.e {
-										case EFunction(_,_,_,_):
-											array.push(i);
-											exprs.remove(i);
-										case _:
-									}
-								
-								case _:
-							}
-						case EPrivate(e):
-							switch e.e {
-								case EFunction(_,_,_,_):
-									array.push(i);
-									exprs.remove(i);
-								case EStatic(e,_):
-									switch e.e {
-										case EFunction(_,_,_,_):
-											array.push(i);
-											exprs.remove(i);
-										case _:
-									}
-								
-								case _:
-							}
-						case _:
-					}
-				}
+
 				for( i in exprs )
 					array.push(i);
 
@@ -578,14 +543,14 @@ class Interp {
 		var l = locals.get(id);
 		if( l != null )
 			return l.r;
+		if( STATICPACKAGES.exists(id) )
+			return STATICPACKAGES[id];
 		if( specialObject != null && specialObject.obj != null )
 		{
 			var field = Reflect.getProperty(specialObject.obj,id);
 			if( field != null && (specialObject.includeFunctions || Type.typeof(field) != TFunction) && (specialObject.exclusions == null || !specialObject.exclusions.contains(id)) )
 				return field;
 		}
-		if( STATICPACKAGES.exists(id) )
-			return STATICPACKAGES[id];
 		var v = finalVariables.get(id);
 		if( finalVariables.exists(id) )
 			return v;
@@ -648,7 +613,7 @@ class Interp {
 			inPrivate = true;
 			expr(e);
 			inPrivate = false;
-			return if( strictVar ) error(EUnexpected("class")) else null;
+			return if( strictVar ) error(EUnexpected("private")) else null;
 		case EStatic(e,inPublic):
 			inStatic = true;
 			if( inPublic != null )
@@ -928,7 +893,7 @@ class Interp {
 			for( p in params )
 				if( p.opt )
 					hasOpt = true;
-				else
+				else if( p.value == null )
 					minParams++;
 			var f = function(args:Array<Dynamic>) 
 			{			
@@ -936,14 +901,14 @@ class Interp {
 				var allHasVal = true;
 				if( minParams > 0 )
 				for( i in 0...minParams ) {
-					if( params[i] != null && (params[i].value != null || !params[i].opt) )
+					if( params[i] != null && (params[i].value != null || params[i].opt || args[i] != null) )
 						continue;
 					else {
 						allHasVal = false;
 						break;
 					}
-				} 
-				if( allHasVal )
+				}
+				if( allHasVal && !inCall )
 				{
 					if( args != null && params != null )
 					for( i in 0...params.length ) {
@@ -958,9 +923,17 @@ class Interp {
 						}
 					}
 				}
-				if( ( (args == null) ? 0 : args.length ) != params.length ) {
-					if( args.length < minParams && !allHasVal ) {
-						var str = "Invalid number of parameters. Got " + args.length + ", required " + minParams;
+				if( ( (args == null) ? 0 : args.length ) != params.length && !inCall) {
+					if( !allHasVal ) for (i in 0...params.length) {
+						var arg = args[i];
+						if( arg == null && !params[i].opt && args.length < i + 1 && params[i].value == null )
+						{
+							error(ECustom("Not enough arguments, expected " + params[i].name));
+						}
+					}
+
+					if( args.length < minParams ) {
+						var str = "Invalid number of parameters. Got " + args.length + ", required " + Math.max(minParams, params.length);
 						if( name != null ) str += " for function '" + name+"'";
 						error(ECustom(str));
 					}
@@ -968,15 +941,6 @@ class Interp {
 						var str = "Invalid number of parameters. Got " + args.length + ", required " + params.length;
 						if( name != null ) str += " for function '" + name+"'";
 						error(ECustom(str));
-					}
-					else {
-						for (i in 0...params.length) {
-							var arg = args[i];
-							if( arg == null && !params[i].opt && args.length < i + 1 )
-							{
-								error(ECustom("Not enough arguments, expected " + params[i].name));
-							}
-						}
 					}
 				}
 				var old = me.locals, depth = me.depth;

@@ -108,8 +108,7 @@ Initialization order is this:
 - Package
 - Imports
 - Classes 
-- Variables (if there are no classes)
-- Functions (if there are no classes) 
+- Functions and variables (if there are no classes) 
 - Other (if there are no classes)
 
 This means you can use functions after creating a variable, for example:

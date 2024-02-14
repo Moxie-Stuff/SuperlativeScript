@@ -24,7 +24,7 @@ typedef Tea =
 {
 	#if sys
 	/**
-		Script's file name. Will be null if the script is not from a file. 
+		Tea's file name. Will be null if the tea is not from a file. 
 		
 		Not available on JavaScript.
 	**/
@@ -50,10 +50,17 @@ typedef Tea =
 		Errors in this call. Will be empty if there are not any.
 	**/
 	public var exceptions(default, null):Array<TeaException>;
+
+	/**
+		How many seconds it took to call the this function.
+
+		It will be -1 if call's been unsuccessful.
+	**/
+	public var lastReportedTime(default, null):Float;
 }
 
 /**
-	The base class for dynamic Haxe scripts.
+	A nice object to brew some tea with!
 **/
 @:structInit
 @:access(teaBase.Interp)
@@ -62,17 +69,7 @@ typedef Tea =
 class SScript
 {
 	/**
-		Ignore return value 
-	**/
-	public static var IGNORE_RETURN(default, never):Dynamic = "#0IGNORE#0RETURN#0VALUE#0";
-
-	/**
-		Stop return value
-	**/
-	public static var STOP_RETURN(default, never):Dynamic = "#1STOP#1RETURN#1VALUE#1";
-
-	/**
-		If not null, assigns all scripts to check or ignore type declarations.
+		If not null, assigns all teas to check or ignore type declarations.
 	**/
 	public static var defaultTypeCheck(default, set):Null<Bool> = true;
 
@@ -89,12 +86,12 @@ class SScript
 	/**
 		Variables in this map will be set to every Tea instance.
 		
-		Variables in this map CANNOT be changed in scripts, unless you remove it from the map.
+		Variables in this map CANNOT be changed in teas, unless you remove it from the map.
 	**/
 	public static var strictGlobalVariables:TeaStrictGlobalMap = new TeaStrictGlobalMap();
 	
 	/**
-		Every created Tea will be mapped to this map. 
+		Every brewed Tea will be mapped to this map. 
 	**/
 	public static var global(default, null):Map<String, SScript> = [];
 	
@@ -110,14 +107,14 @@ class SScript
 	public var customOrigin(default, set):String;
 
 	/**
-		Script's own return value.
+		Tea's own return value.
 		
 		This is not to be messed up with function's return value.
 	**/
 	public var returnValue(default, null):Null<Dynamic>;
 
 	/**
-		ID for this script, used for scripts with no script file.
+		ID for this tea, used for teas with no script file.
 	**/
 	public var ID(default, null):Null<Int> = null;
 
@@ -127,21 +124,14 @@ class SScript
 	public var typeCheck:Bool = false;
 
 	/**
-		Reports how many seconds it took to execute this script. 
+		Reports how many seconds it took to execute this tea. 
 
 		It will be -1 if it failed to execute.
 	**/
 	public var lastReportedTime(default, null):Float = -1;
 
 	/**
-		Report how many seconds it took to call the latest function in this script.
-
-		It will be -1 if it failed to execute.
-	**/
-	public var lastReportedCallTime(default, null):Float = -1;
-
-	/**
-		Used in `set`. If a class is set in this script while being in this array, an exception will be thrown.
+		Used in `set`. If a class is set in this tea while being in this array, an exception will be thrown.
 	**/
 	public var notAllowedClasses(default, null):Array<Class<Dynamic>> = [];
 
@@ -159,19 +149,19 @@ class SScript
 	public var interp(default, null):Interp;
 
 	/**
-		An unique parser for the script to parse strings.
+		An unique parser for the tea to parse strings.
 	**/
 	public var parser(default, null):Parser;
 
 	/**
-		The script to execute. Gets set automatically if you create a `new` Tea instance.
+		The script to execute. Gets set automatically if you brew a `new` Tea.
 	**/
 	public var script(default, null):String = "";
 
 	/**
-		This variable tells if this script is active or not.
+		This variable tells if this tea is active or not.
 
-		Set this to false if you do not want your script to get executed!
+		Set this to false if you do not want your tea to get executed!
 	**/
 	public var active:Bool = true;
 
@@ -196,20 +186,18 @@ class SScript
 	public var parsingException(default, null):TeaException;
 
 	/**
-		"Class" path of this script. Doesn't actually represent a class, it's only here for static variables.
+		"Class" path of this tea. Doesn't actually represent a class, it's only here for static variables.
 
-		Scripts cannot have same class paths, they must be all different. 
+		Teas cannot have same class paths, they must be all different. 
 
-		Automatically gets changed when you use `class` in script.
+		Automatically gets changed when you use `class` in tea.
 	**/
 	public var classPath(get, null):String;
 
 	/**
-		Package path of this script. Gets set automatically when you use `package`.
+		Package path of this tea. Gets set automatically when you use `package`.
 	**/
 	public var packagePath(get, null):String = "";
-
-	@:noPrivateAccess static var defines(default, null):Map<String, String>;
 
 	@:deprecated("parsingExceptions are deprecated, use parsingException instead")
 	var parsingExceptions(get, never):Array<Exception>;
@@ -217,9 +205,9 @@ class SScript
 	@:noPrivateAccess var _destroyed(default, null):Bool;
 
 	/**
-		Creates a new Tea instance.
+		Brews a new Tea.
 
-		@param scriptPath The script path or the script itself (Files are recommended).
+		@param scriptPath The script path or the script itself.
 		@param Preset If true, SScript will set some useful variables to interp. Override `preset` to customize the settings.
 		@param startExecute If true, script will execute itself. If false, it will not execute.	
 	**/
@@ -262,9 +250,9 @@ class SScript
 			if (debugTraces && scriptPath != null && scriptPath.length > 0)
 			{
 				if (lastReportedTime == 0)
-					trace('SScript instance created instantly (0s)');
+					trace('Tea brewed instantly (0 seconds)');
 				else 
-					trace('SScript instance created in ${lastReportedTime}s');
+					trace('Tea brewed in ${lastReportedTime} seconds');
 			}
 		}
 		catch (e)
@@ -274,9 +262,7 @@ class SScript
 	}
 
 	/**
-		Executes this script once.
-
-		Executing scripts with classes will not do anything.
+		Executes this tea once. Must be called once to get classes and functions working.
 	**/
 	public function execute():Void
 	{
@@ -314,9 +300,9 @@ class SScript
 	}
 
 	/**
-		Sets a variable to this script. 
+		Sets a variable to this tea. 
 
-		If `key` already exists it will be replaced.
+		If `key` already exists, it will be replaced.
 		@param key Variable name.
 		@param obj The object to set.
 		@param setAsFinal Whether if set the object as final. If set as final, 
@@ -347,9 +333,9 @@ class SScript
 				if (traces)
 				{
 					if (interp == null)
-						trace("This script is unusable!");
+						trace("This tea is unusable!");
 					else
-						trace("This script is not active!");
+						trace("This tea is not active!");
 				}
 			}
 			else
@@ -407,7 +393,7 @@ class SScript
 	}
 
 	/**
-		Sets a class to this script from a string.
+		Sets a class to this tea from a string.
 		`cl` will be formatted, for example: `sys.io.File` -> `File`.
 		@param cl The class to set.
 		@return this instance for chaining.
@@ -477,9 +463,9 @@ class SScript
 	}
 	
 	/**
-		Returns the local variables in this script as a fresh map.
+		Returns the local variables in this tea as a fresh map.
 
-		Changing any value in returned map will not change the script's variables.
+		Changing any value in returned map will not change the tea's variables.
 	**/
 	public function locals():Map<String, Dynamic>
 	{
@@ -500,7 +486,7 @@ class SScript
 	}
 
 	/**
-		Removes a variable from this script. 
+		Removes a variable from this tea. 
 
 		If a variable named `key` doesn't exist, unsetting won't do anything.
 		@param key Variable name to remove.
@@ -539,9 +525,9 @@ class SScript
 			if (traces)
 			{
 				if (interp == null)
-					trace("This script is unusable!");
+					trace("This tea is unusable!");
 				else
-					trace("This script is not active!");
+					trace("This tea is not active!");
 			}
 
 			return null;
@@ -561,12 +547,12 @@ class SScript
 	}
 
 	/**
-		Calls a function the script.
+		Calls a function from this tea.
 
-		`WARNING:` You MUST execute the script at least once to get the functions to script's interpreter.
-		If you do not execute this script and `call` a function, script will ignore your call.
+		`WARNING:` You MUST execute the tea once to get the functions into this tea.
+		If you do not execute this tea and `call` a function, your call will be ignored.
 
-		@param func Function name in script file. 
+		@param func Function name in tea. 
 		@param args Arguments for the `func`. If the function does not require arguments, leave it null.
 		@return Returns a sugar filled with called function, returned value etc. Returned value is at `returnValue`.
 	**/
@@ -577,7 +563,8 @@ class SScript
 				exceptions: [new TeaException(new Exception((if (scriptFile != null && scriptFile.length > 0) scriptFile else "Tea instance") + " is destroyed."))],
 				calledFunction: func,
 				succeeded: false,
-				returnValue: null
+				returnValue: null,
+				lastReportedTime: -1
 			};
 
 		if (!active)
@@ -585,7 +572,8 @@ class SScript
 				exceptions: [new TeaException(new Exception((if (scriptFile != null && scriptFile.length > 0) scriptFile else "Tea instance") + " is not active."))],
 				calledFunction: func,
 				succeeded: false,
-				returnValue: null
+				returnValue: null,
+				lastReportedTime: -1
 			};
 
 		var time:Float = Timer.stamp();
@@ -595,7 +583,8 @@ class SScript
 			exceptions: [],
 			calledFunction: func,
 			succeeded: false,
-			returnValue: null
+			returnValue: null,
+			lastReportedTime: -1
 		}
 		#if sys
 		if (scriptFile != null && scriptFile.length > 0)
@@ -643,7 +632,7 @@ class SScript
 				if (traces)
 					trace('Function $func does not exist in $scriptFile.');
 
-				if (scriptFile != null && scriptFile.length > 1)
+				if (scriptFile != null && scriptFile.length > 0)
 					pushException('Function $func does not exist in $scriptFile.');
 				else 
 					pushException('Function $func does not exist in Tea instance.');
@@ -659,12 +648,14 @@ class SScript
 					exceptions: caller.exceptions,
 					calledFunction: func,
 					succeeded: true,
-					returnValue: functionField
+					returnValue: functionField,
+					lastReportedTime: -1,
 				};
 				#if sys
 				if (scriptFile != null && scriptFile.length > 0)
 					Reflect.setField(caller, "fileName", scriptFile);
 				#end
+				Reflect.setField(caller, "lastReportedTime", Timer.stamp() - time);
 			}
 			catch (e)
 			{
@@ -672,13 +663,12 @@ class SScript
 				caller.exceptions.insert(0, new TeaException(e));
 			}
 		}
-		lastReportedCallTime = Timer.stamp() - time;
 
 		return caller;
 	}
 
 	/**
-		Clears all of the keys assigned to this script.
+		Clears all of the keys assigned to this tea.
 
 		@return Returns this instance for chaining.
 	**/
@@ -702,7 +692,7 @@ class SScript
 	}
 
 	/**
-		Tells if the `key` exists in this script's interpreter.
+		Tells if the `key` exists in this tea's interpreter.
 		@param key The string to look for.
 		@return Returns true if `key` is found in interpreter.
 	**/
@@ -723,7 +713,7 @@ class SScript
 	}
 
 	/**
-		Sets some useful variables to interp to make easier using this script.
+		Sets some useful variables to interp to make easier using this tea.
 		Override this function to set your custom sets aswell.
 	**/
 	public function preset():Void
@@ -825,7 +815,7 @@ class SScript
 		it should be avoided whenever possible.
 		Always try to use a script file.
 		@param string String you want to execute. If this argument is a file, this will act like `new` and will change `scriptFile`.
-		@param origin Optional origin to use for this script, it will appear on traces.
+		@param origin Optional origin to use for this tea, it will appear on traces.
 		@return Returns this instance for chaining. Will return `null` if failed.
 	**/
 	public function doString(string:String, ?origin:String):SScript
@@ -897,9 +887,9 @@ class SScript
 			if (debugTraces)
 			{
 				if (lastReportedTime == 0)
-					trace('Tea instance created instantly (0s)');
+					trace('Tea instance brewed instantly (0s)');
 				else 
-					trace('Tea instance created in ${lastReportedTime}s');
+					trace('Tea instance brewed in ${lastReportedTime}s');
 			}
 		}
 		catch (e) lastReportedTime = -1;
@@ -920,7 +910,7 @@ class SScript
 
 	#if (sys)
 	/**
-		Checks for scripts in the provided path and returns them as an array.
+		Checks for teas in the provided path and returns them as an array.
 
 		Make sure `path` is a directory!
 
@@ -929,11 +919,11 @@ class SScript
 
 		@param path The directory to check for. Nondirectory paths will be ignored.
 		@param extensions Optional extension to check in file names.
-		@return The script array.
+		@return The teas in an array.
 	**/
 	#else
 	/**
-		Checks for scripts in the provided path and returns them as an array.
+		Checks for teas in the provided path and returns them as an array.
 
 		This function will always return an empty array, because you are targeting an unsupported target.
 		@return An empty array.
@@ -973,9 +963,9 @@ class SScript
 	}
 
 	/**
-		This function makes this script **COMPLETELY** unusable and unrestorable.
+		This function makes this tea **COMPLETELY** unusable and unrestorable.
 
-		If you don't want to destroy your script just yet, just set `active` to false!
+		If you don't want to destroy your tea just yet, just set `active` to false!
 	**/
 	public function destroy():Void
 	{
@@ -1013,7 +1003,6 @@ class SScript
 		scriptFile = null;
 		active = false;
 		notAllowedClasses = null;
-		lastReportedCallTime = -1;
 		lastReportedTime = -1;
 		ID = null;
 		parsingException = null;

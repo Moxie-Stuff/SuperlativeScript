@@ -1,3 +1,9 @@
+# 10.1.618
+- Fixed variable initialization order
+- Fixed function arguments
+- Moved `lastReportedCallTime` to call sugars, now accessible with `lastReportedTime`
+- Fixed typos 
+
 # 10.0.618
 - Added class support
 - Added string interpolation
