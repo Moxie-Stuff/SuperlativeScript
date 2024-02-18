@@ -4,7 +4,7 @@
 
 # SScript
 
-SuperlativeScript is an easy to use Haxe script tool that aims to be simple while supporting all Haxe structures by Tahir and Gabi. It aims to be like native Haxe while staying easy to use.
+SuperlativeScript is an easy to use Haxe script tool that aims to be simple while supporting all Haxe structures. It aims to be like native Haxe while staying easy to use.
 
 ## Contribution
 If you have an issue with SuperlativeScript or have a suggestion, you can always open an issue here. However, pull requests are NOT welcome and will be ignored.
