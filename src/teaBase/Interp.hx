@@ -35,14 +35,22 @@ private enum Stop {
 	SReturn;
 }
 
+private enum SScriptNull {
+	Not_NULL;
+}
+
 @:keepSub
 @:access(teaBase.Parser)
 @:access(tea.SScript)
 class Interp {
 
+	static var eabstracts:Array<String> = [];
+	static var EABSTRACTS:Map<String, { ?fileName : String , tea : TeaEAbstract }> = [];
 	static var classes:Array<String> = [];
-	static var STATICPACKAGES:Map<String, TeaClass> = [];
+	static var STATICPACKAGES:Map<String, { ?fileName : String , tea : TeaClass }> = [];
 	var pushedVars:Array<String> = [];
+	var pushedClasses:Array<String> = [];
+	var pushedAbs:Array<String> = [];
 
 	#if haxe3
 	public var variables : Map<String,Dynamic>;
@@ -82,13 +90,15 @@ class Interp {
 	var inBool : Bool = false;
 
 	var inCall : Bool = false;
+	var currentArg : String;
 
 	public inline function setScr(s)
 	{
 		return script = s;
 	}
 
-	var resumeError:Bool;
+	var resumeError : Bool = false;
+	var canUseAbs : Bool = false;
 
 	public function new() {
 		#if haxe3
@@ -385,13 +395,13 @@ class Interp {
 					{
 						case EPackage(_):
 							if(e.indexOf(i)>0)
-								error(ECustom('Unexpected package'));
+								error(EUnexpected("package"));
 							else if(pack > 1)
 								error(ECustom('Multiple packages has been declared'));
 							pack++;
 						case EImport(_,_,_) | EImportStar(_) | EUsing(_):
 							if(e.indexOf(i)>imports + pack)
-								error(ECustom('Unexpected import'));
+								error(EUnexpected("import"));
 							imports++;
 						case _:
 					}
@@ -424,7 +434,7 @@ class Interp {
 				
 				for( i in exprs ) {
 					switch Tools.expr(i) {
-						case EClass(_):
+						case EClass(_) | EEAbstract(_,_,_,_):
 							array.push(i);
 							exprs.remove(i);
 						case _:
@@ -544,7 +554,9 @@ class Interp {
 		if( l != null )
 			return l.r;
 		if( STATICPACKAGES.exists(id) )
-			return STATICPACKAGES[id];
+			return STATICPACKAGES[id].tea;
+		else if( EABSTRACTS.exists(id) )
+			return canUseAbs ? EABSTRACTS[id].tea : error(ECannotUseAbs);
 		if( specialObject != null && specialObject.obj != null )
 		{
 			var field = Reflect.getProperty(specialObject.obj,id);
@@ -564,23 +576,103 @@ class Interp {
 		curExpr = e;
 		var e = e.e;
 		switch( e ) {
+		case EEAbstract(ident,parent,exprs,fromParent):
+			if( eabstracts.contains(ident) || classes.contains(ident) )
+			{
+				var tea = null;
+				if( EABSTRACTS[ident] != null )
+					tea = EABSTRACTS[ident].fileName;
+				else if( STATICPACKAGES[ident] != null )
+					tea = STATICPACKAGES[ident].fileName;
+				error(EAlreadyModule(ident,tea));
+			}
+			else if( ident == ident.toLowerCase() )
+				error(ETypeName);
+
+			var abstractValueInt = -1;
+			eabstracts.push(ident);
+			pushedAbs.push(ident);
+			var eabstract = new TeaEAbstract(ident);
+			for( i in exprs ) {
+				var isPublic = true;
+				var evar = null;
+				switch i.e {
+					case EVar(_,_,_,_): evar = i.e;
+					case EPublic(e): switch e.e {
+						case EVar(_,_,_,_): evar = e.e;
+						case _:
+					}
+					case EPrivate(e): switch e.e {
+						case EVar(_,_,_,_): 
+							isPublic = false;
+							evar = e.e;
+						case _:
+					} 
+					case _:
+				}
+
+				if( evar != null ) {
+					var name:String = null,value:Null<Dynamic> = null,type:String = null;
+					var reallyNull = false;
+					switch evar {
+						case EVar(n,_,t,e):
+							if( e == null ) reallyNull = true;
+							name = n;
+							value = e != null ? expr(e) : null;
+							type = t != null ? Tools.ctToType(t) : null;
+						case _:
+					}
+					var sugar = TeaEAbstract.createSugar(isPublic,name,value);
+					if( eabstract.fields.exists(name) )
+						error(ECustom("Duplicate abstract field declaration : " + ident + "." + name));
+					if( parent == "Int" ) {
+						if( value == null && reallyNull ) 
+						{
+							sugar.v = abstractValueInt + 1;
+							abstractValueInt++;
+						}
+						else if( value != null && abstractValueInt != value && !reallyNull ) abstractValueInt = sugar.v;
+						else if( !(value != null && abstractValueInt == value) ) abstractValueInt++;
+					}
+					else if( parent == "String" && value == null && reallyNull ) {
+						sugar.v = name;
+					}
+
+					eabstract.fields[name] = sugar;
+				}
+			}
+			var fileName = null;
+			if( script.customOrigin != null && script.customOrigin.length > 0 )
+				fileName = script.customOrigin;
+			else if( script.scriptFile != null && script.scriptFile.length > 0 )
+				fileName = script.scriptFile;
+			EABSTRACTS[ident] = { fileName : fileName , tea : eabstract }
+			return if( strictVar ) error(EUnexpected("enum")) else null;
 		case EClass(cl,e):
-			if( classes.contains(cl) )
-				error(ECustom("Multiple class declaration " + cl));
+			if( classes.contains(cl) || eabstracts.contains(cl) )
+			{
+				var tea = null;
+				if( EABSTRACTS[cl] != null )
+					tea = EABSTRACTS[cl].fileName;
+				else if( STATICPACKAGES[cl] != null )
+					tea = STATICPACKAGES[cl].fileName;
+				error(EMultipleDecl(cl,tea));
+			}
 			else if( cl == cl.toLowerCase() )
-				error(ECustom("Type name should start with an uppercase letter"));
+				error(ETypeName);
+
 			for( e in e ) {
 				var expr = e.e;
 				switch expr {
 					case EPublic(e):
 						switch e.e {
 							case EStatic(_,_):
-							case _: error(ECustom("Unexpected public"));
+							case _: error(EUnexpected("public"));
 						}
 					case EPrivate(e):
 						switch e.e {
 							case EStatic(_,_):
-							case _: error(ECustom("Unexpected private"));
+							case _: error(EUnexpected("private"));
 						}
 					case EStatic(_,_):
 					case _: error(ECustom("Expected }"));
@@ -588,26 +680,33 @@ class Interp {
 			}
 
 			classes.push(cl);
+			pushedClasses.push(cl);
 			script.setClassPath(cl);
 			if( !STATICPACKAGES.exists(cl) )
 			{
+				var fileName = null;
+				if( script.customOrigin != null && script.customOrigin.length > 0 )
+					fileName = script.customOrigin;
+				else if( script.scriptFile != null && script.scriptFile.length > 0 )
+					fileName = script.scriptFile;
+
 				var v = new TeaClass(cl);
-				STATICPACKAGES.set(cl,v);
+				STATICPACKAGES.set(cl,{ fileName : fileName , tea : v });
 			}
 			for( e in e ) expr(e);
 			return if( strictVar ) error(EUnexpected("class")) else null;
 		case EPublic(e):
 			if( inPublic && !inStatic )
-				error(ECustom('Unexpected public'));
+				error(EUnexpected("public"));
 			
 			inPrivate = false;
 			inPublic = true;
 			expr(e);
 			inPublic = false;
-			return if( strictVar ) error(EUnexpected("public")) else null;
+			return if( strictVar ) error(EUnexpected("public")); else null;
 		case EPrivate(e):
 			if( inPrivate && !inStatic )
-				error(ECustom('Unexpected private'));
+				error(EUnexpected("private"));
 
 			inPublic = false;
 			inPrivate = true;
@@ -707,7 +806,7 @@ class Interp {
 			{
 				variables.set(n,expr1);
 				if( script.classPath != null && script.classPath.length > 0 && STATICPACKAGES.exists(script.classPath) )
-					STATICPACKAGES.get(script.classPath).fields.set(n,TeaClass.createSugar(inPublic && !noPrivateAccess, expr1, f, noPrivateAccess, false));
+					STATICPACKAGES.get(script.classPath).tea.fields.set(n,TeaClass.createSugar(inPublic && !noPrivateAccess, expr1, f, noPrivateAccess, false));
 				else if( inPublic ) 
 				{
 					if( !pushedVars.contains(n) ) {
@@ -728,7 +827,10 @@ class Interp {
 			restore(old);
 			return v;
 		case EField(e,f):
-			return get(expr(e),f);
+			canUseAbs = true;
+			var r = get(expr(e),f);
+			canUseAbs = false;
+			return r;
 		case ESwitchBinop(p, e1, e2):
 			var parent = expr(p);
 			var e1 = expr(e1), e2 = expr(e2);
@@ -763,7 +865,9 @@ class Interp {
 		case ECall(e,params):
 			var args = new Array();
 			for( p in params )
+			{
 				args.push(expr(p));
+			}
 
 			switch( Tools.expr(e) ) {
 			case EField(e,f):
@@ -872,7 +976,7 @@ class Interp {
 			if( c != null && e != null )
 				finalVariables.set( c , e );
 			if( e == null && f != null )
-				error(ECustom("Type not found : " + f));
+				error(ETypeNotFound(f));
 				
 			return if( strictVar ) error(EUnexpected("import")) else null;
 		case EUsing( e, c ):
@@ -882,7 +986,7 @@ class Interp {
 			return if( strictVar ) error(EUnexpected("using")) else null;
 		case EPackage(p):
 			if( p == null )
-				error(ECustom("Unexpected package"));
+				error(EUnexpected("package"));
 
 			@:privateAccess script.setPackagePath(p);
 			return if( strictVar ) error(EUnexpected("package")) else null;
@@ -897,57 +1001,53 @@ class Interp {
 					minParams++;
 			var f = function(args:Array<Dynamic>) 
 			{			
+				if( args == null ) error(ENullObjectReference);
+ 				var copyArgs = [];
 				inFunc = true;
-				var allHasVal = true;
-				if( minParams > 0 )
-				for( i in 0...minParams ) {
-					if( params[i] != null && (params[i].value != null || params[i].opt || args[i] != null) )
-						continue;
+				var i = 0;
+				while( true ) {
+					if( i < args.length ) {
+						var v = args[i];
+						if( v == null ) copyArgs.push(Not_NULL);
+						else copyArgs.push(v);
+						i++;
+						if( i >= args.length ) break;
+ 					}
+					else break;
+				}
+				if( copyArgs.length > params.length ) 
+					error(ECustom("Too many arguments"));
+					
+				for( i in 0...params.length ) {
+					var param = params[i];
+					
+					var arg = copyArgs[i];
+					if( param == null ) continue;
+					if( param.opt ) {
+						if( ( arg == Not_NULL || arg == null ) && param.value != null )
+							args[i] = expr(param.value);
+						else if( arg == null && param.value == null )
+							args[i] = null; 
+					}
 					else {
-						allHasVal = false;
-						break;
-					}
-				}
-				if( allHasVal && !inCall )
-				{
-					if( args != null && params != null )
-					for( i in 0...params.length ) {
-						if( args.length < params.length && args[i] == null && params[i] != null && params[i].value != null )
-							args[i] = expr(params[i].value);
-						else if( args.length < params.length && args[i] == null && params[i] != null && params[i].opt )
-						{
-							if( params[i].value != null )
-								args[i] = expr(params[i].value);
-							else 
-								args[i] = null;
+						if( arg == null && param.value == null ) {
+							var str = "Not enough arguments, expected ";
+							str += param.name;
+							error(ECustom(str));
 						}
+						else if( arg == null && param.value != null )
+							args[i] = expr(param.value);
 					}
 				}
-				if( ( (args == null) ? 0 : args.length ) != params.length && !inCall) {
-					if( !allHasVal ) for (i in 0...params.length) {
-						var arg = args[i];
-						if( arg == null && !params[i].opt && args.length < i + 1 && params[i].value == null )
-						{
-							error(ECustom("Not enough arguments, expected " + params[i].name));
-						}
-					}
-
-					if( args.length < minParams ) {
-						var str = "Invalid number of parameters. Got " + args.length + ", required " + Math.max(minParams, params.length);
-						if( name != null ) str += " for function '" + name+"'";
-						error(ECustom(str));
-					}
-					else if( args.length > params.length ) {
-						var str = "Invalid number of parameters. Got " + args.length + ", required " + params.length;
-						if( name != null ) str += " for function '" + name+"'";
-						error(ECustom(str));
-					}
-				}
+			
 				var old = me.locals, depth = me.depth;
 				me.depth++;
 				me.locals = me.duplicate(capturedLocals);
 				for( i in 0...params.length )
+				{
+					currentArg = params[i].name;
 					me.locals.set(params[i].name,{ r : {args[i];}});
+				}
 				var r = null;
 				var oldDecl = declared.length;
 				if( inTry )
@@ -986,7 +1086,7 @@ class Interp {
 					if( inStatic )
 					{
 						if( script.classPath != null && script.classPath.length > 0 && STATICPACKAGES.exists(script.classPath) )
-							STATICPACKAGES.get(script.classPath).fields.set(name,TeaClass.createSugar(inPublic && !noPrivateAccess , f , false , false , true));
+							STATICPACKAGES.get(script.classPath).tea.fields.set(name,TeaClass.createSugar(inPublic && !noPrivateAccess , f , false , false , true));
 						else if( inPublic ) 
 						{
 							if( !pushedVars.contains(name) ) {
@@ -1005,14 +1105,14 @@ class Interp {
 			}
 			return f;
 		case EArrayDecl(arr):
-			if(arr.length > 0 && Tools.expr(arr[0]).match(EBinop("=>", _))) {
+			if( arr.length > 0 && Tools.expr(arr[0]).match(EBinop("=>", _)) ) {
 				var isAllString:Bool = true;
 				var isAllInt:Bool = true;
 				var isAllObject:Bool = true;
 				var isAllEnum:Bool = true;
 				var keys:Array<Dynamic> = [];
 				var values:Array<Dynamic> = [];
-				for (e in arr) {
+				for( e in arr ) {
 					switch(Tools.expr(e)) {
 						case EBinop("=>", eKey, eValue): {
 							var key:Dynamic = expr(eKey);
@@ -1034,14 +1134,14 @@ class Interp {
 					else if(isAllObject) new haxe.ds.ObjectMap<Dynamic, Dynamic>();
 					else new Map<Dynamic, Dynamic>();
 				}
-				for (n in 0...keys.length) {
+				for( n in 0...keys.length ) {
 					setMapValue(map, keys[n], values[n]);
 				}
 				return map;
 			}
 			else {
 				var a = new Array();
-				for ( e in arr ) {
+				for( e in arr ) {
 					a.push(expr(e));
 				}
 				return a;
@@ -1091,7 +1191,7 @@ class Interp {
 				set(o,f.name,expr(f.e));
 			return o;
 		case ECoalesce(e1,e2,assign):
-			return if(assign) coalesce2(e1,e2) else coalesce(e1,e2);
+			return if( assign ) coalesce2(e1,e2) else coalesce(e1,e2);
 		case ESafeNavigator(e1, f):
 			var e = expr(e1);
 			if( e == null )
@@ -1257,12 +1357,22 @@ class Interp {
 		if( o == null ) error(EInvalidAccess(f));
 		return {
 			for( i => k in STATICPACKAGES )
-				if( k == o ) {
-					var v = k.fields.get(f);
+				if( k.tea == o ) {
+					var v = k.tea.fields.get(f);
 					if( v == null )
-						error(EDoNotHaveField(k,f));
+						error(EDoNotHaveField(k.tea,f));
 					if( !v.isPublic && (v.noAccess || !hasPrivateAccess ) )
-						error(ECustom('Cannot access private field ' + f));
+						error(EPrivateField(f));
+					return v.v;
+				}
+
+			for( i => k in EABSTRACTS ) 
+				if( k.tea == o ) {
+					var v = k.tea.fields[f];
+					if( v == null )
+						error(EAbstractField(k.tea,f));
+					if( !v.isPublic && !hasPrivateAccess )
+						error(EPrivateField(f));
 					return v.v;
 				}
 
@@ -1273,10 +1383,10 @@ class Interp {
 	function set( o : Dynamic, f : String, v : Dynamic ) : Dynamic {
 		if( o == null ) error(EInvalidAccess(f));
 		for( i => k in STATICPACKAGES )
-			if( k == o ) {
-				var field = k.fields.get(f);
+			if( k.tea == o ) {
+				var field = k.tea.fields.get(f);
 				if( field == null )
-					error(EDoNotHaveField(k,f));
+					error(EDoNotHaveField(k.tea,f));
 				if( !field.isPublic && (field.noAccess || !hasPrivateAccess ) )
 					error(ECustom('Cannot access private field ' + f));
 				if( field.isFinal )
@@ -1287,6 +1397,10 @@ class Interp {
 				field.v = v;
 				return v;
 			}
+		
+		for( i => k in EABSTRACTS )
+			if( k == o ) error(EWriting);
+
 		Reflect.setProperty(o,f,v);
 		return v;
 	}

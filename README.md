@@ -81,13 +81,28 @@ If a Tea Class is tried to be accessed without it being initialized, it will thr
 Extending is not supported, so it is not possible to create a real class from a Tea Class.
 Only static variables and functions are allowed in Tea Classes.
 
-If a Tea contains a class, it cannot have any other expressions other than classes. For example, this script is not valid.
+If a tea contains a class, it cannot have any other expressions other than classes, imports, package and enum abstracts. For example, this script is not valid.
 ```haxe
 class ScriptClass {
 
 }	
 trace(1); // Exception: Unexpected trace
 ```
+
+## Enum Abstracts
+With 11.0.618, enum abstracts are supported in teas and can be accessed from other teas.
+
+Example:
+```haxe
+enum abstract EnumAbstract(Int) from Int to Int {
+	public var One = 1;
+	public var Two; // Omitted and deduced by the interpreter, so the value is 2
+}
+``` 
+Just like classes, if a tea contains enum abstract the other expressions cannot be other than classes, imports, package and enum abstracts.
+
+#### Limitations
+`from` and `to` are parsed but ignored completely by the interpreter. 
 
 ## Reworked Function Arguments
 Function arguments have been reworked, so optional arguments will work like native Haxe.

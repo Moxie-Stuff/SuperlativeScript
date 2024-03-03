@@ -33,12 +33,26 @@ using StringTools;
 class Tools {
 	static final thisName:String = 'teaBase.Tools';
 
-	public static var keys:Array<String> = [
+	static var keys:Array<String> = [
 		"import", "package", "if", "var", "for", "while", "final", "do", "as", "using", "break", "continue",
 		"public", "private", "static", "overload", "override", "class", "function", "else", "try", "catch",
 		"abstract", "case", "switch", "untyped", "cast", "typedef", "dynamic", "default", "enum", "extern",
 		"extends", "implements", "in", "macro", "new", "null", "return", "throw", "from", "to", "super", "is"
 	];
+
+	static var enumKeys:Array<String> = {
+		var keys = keys.copy();
+		var remove = ["var","public","private","function","try","catch","abstract","enum","switch","case","new","null","throw"];
+		for( i in remove )
+			keys.remove(i);
+		keys;
+	}
+
+	public static function resolve( clOrEnum : String ) {
+		var cl:Dynamic = Type.resolveEnum(clOrEnum);
+		if( cl == null ) cl = Type.resolveClass(clOrEnum);
+		return cl;
+	}
 
 	public static function ctToType( ct : CType ):String {
 		var ctToType:(ct:CType)->String = function(ct)
@@ -138,6 +152,7 @@ class Tools {
     }
 
     #if !macro
+	static final allNamesAvailable:Array<String> = [];
     static final allClassesAvailable:Map<String, Class<Dynamic>> = {
         function returnMap()
         {
@@ -151,6 +166,7 @@ class Tools {
                     var c = Type.resolveClass(i);
                     if (c != null)
                         map[i] = c;
+					allNamesAvailable.push(i);
                 }
             }
 			

@@ -65,6 +65,7 @@ typedef Tea =
 @:structInit
 @:access(teaBase.Interp)
 @:access(teaBase.Parser)
+@:access(teaBase.Tools)
 @:keepSub
 class SScript
 {
@@ -293,7 +294,7 @@ class SScript
 			}
 			catch (e) 
 			{
-				parsingException = e;
+				parsingException = e;				
 				returnValue = null;
 			}
 		}
@@ -775,9 +776,14 @@ class SScript
 
 		if (scriptPath == null || scriptPath.length < 1 || BlankReg.match(scriptPath))
 		{
-			ID = IDCount + 1;
-			IDCount++;
-			global[Std.string(ID)] = this;
+			if (customOrigin != null)
+				global[customOrigin] = this;
+			else 
+			{
+				ID = IDCount + 1;
+				IDCount++;
+				global[Std.string(ID)] = this;
+			}
 			return;
 		}
 
@@ -858,7 +864,13 @@ class SScript
 			{	
 				script = string;
 
-				if (scriptFile != null && scriptFile.length > 0)
+				if (customOrigin != null && customOrigin.length > 0)
+				{
+					if (ID != null)
+						global.remove(Std.string(ID));
+					global[customOrigin] = this;
+				}
+				else if (scriptFile != null && scriptFile.length > 0)
 				{
 					if (ID != null)
 						global.remove(Std.string(ID));
@@ -976,6 +988,8 @@ class SScript
 			global.remove(scriptFile);
 		else if (global.exists(script) && script != null && script.length > 0)
 			global.remove(script);
+		if (global.exists(customOrigin))
+			global.remove(customOrigin);
 		if (global.exists(Std.string(ID)))
 			global.remove(script);
 		
@@ -985,6 +999,21 @@ class SScript
 			Interp.STATICPACKAGES[classPath] = null;
 			Interp.STATICPACKAGES.remove(classPath);
 		}
+
+		for (i in interp.pushedClasses)
+		{
+			Interp.classes.remove(i);
+			Interp.STATICPACKAGES[i] = null;
+			Interp.STATICPACKAGES.remove(i);
+		} 
+
+		for (i in interp.pushedAbs)
+		{
+			Interp.eabstracts.remove(i);
+			Interp.EABSTRACTS[i].tea = null;
+			Interp.EABSTRACTS[i].fileName = null;
+			Interp.EABSTRACTS.remove(i);
+		} 
 		
 		for (i in interp.pushedVars) 
 		{
@@ -1059,6 +1088,8 @@ class SScript
 	{
 		if (_destroyed)
 			return null;
+		if (global.exists(value))
+			throw "Origin " + value + " already exists in global.";
 		
 		@:privateAccess parser.origin = value;
 		return customOrigin = value;

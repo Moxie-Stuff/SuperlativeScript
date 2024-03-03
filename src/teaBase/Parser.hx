@@ -48,6 +48,7 @@ enum Token {
 }
 
 @:keep
+@:access(teaBase.Tools)
 @:access(tea.SScript)
 class Parser {
 
@@ -235,6 +236,7 @@ class Parser {
 		if( inInterp ) return true;
 		if( e == null ) return false;
 		return switch( expr(e) ) {
+		case EEAbstract(_,_,_,_): true;
 		case EClass(_,_): true;
 		case EPublic(e): isBlock(e);
 		case EPrivate(e): isBlock(e);
@@ -272,7 +274,16 @@ class Parser {
 		}
 
 
-		if( !inClass ) {
+		if( inEnum ) {
+			if( tk != TStatement && tk != TEof && tk != TBrClose ) {
+				switch e.e {
+					case EEAbstract(_,_,_,_):
+					case EVar(_,_,_,_):
+					case _: unexpected(tk);
+				}
+			}
+		}
+		else if( !inClass ) {
 			if( tk != TStatement && tk != TEof ) {
 				if( isBlock(e) )
 					push(tk);
@@ -643,18 +654,98 @@ class Parser {
 	var inStatic : Bool = false;
 	var inPublic : Bool = false;
 	var inPrivate : Bool = false;
+	var inEnum : Bool = false;
+
+	var structures : Array< String > = [];
 	function parseStructure(id) {
+		if( !inClass && !inEnum )
+			structures.push(id);
 		var p1 = tokenMin;
 		if( isClassScript ) {
 			switch id {
-				case "class" | "package" | "import" | "using":
-				case _: error(ECustom('Unexpected ' + id));
+				case "class" | "package" | "import" | "using" | "enum" | "abstract" if (!inEnum):
+				case _ if (!inEnum): error(EUnexpected(id));
 			}
+			if( inEnum && Tools.enumKeys.contains(id) )
+				error(EUnexpected(id));
 		}
 		return switch( id ) {
+		case "enum":
+			if( inEnum )
+				error(EUnexpected("enum"));
+			var tk = token();
+			switch tk {
+				case TId("abstract"):
+					inEnum = true;
+				case TBrOpen: 
+					error(ECustom("Expected abstract"));
+				case _: 
+					unexpected(tk);
+			}
+
+			var v = parseStructure("abstract");
+			inEnum = false;
+			return v;
+		case "abstract":
+			if( !inEnum )
+				unexpected(TId("abstract"));
+
+			var varExprs = [];
+			var ident = getIdent();
+			isClassScript = true;
+			
+			ensure(TPOpen);
+			var parent = getIdent();
+			ensure(TPClose);
+
+			var hasFrom = false;
+			var hasTo = false;
+			while( true ) {
+				var tk = token();
+				switch tk {
+					case TId(s):
+						if( s == "from" ) { 
+							hasFrom = true;
+							var tk = token();
+							push(tk);
+							if( Type.enumEq(tk,TId("from")) ) unexpected(TId("from"));
+						}
+						else if( s == "to" ) {
+							hasTo = true;
+							var tk = token();
+							push(tk);
+							if( Type.enumEq(tk,TId("to")) ) unexpected(TId("to"));
+						}
+						if( !hasFrom && !hasTo ) unexpected(tk);
+					case TBrOpen: 
+						var tk = token();
+						if( tk == TBrClose ) break;
+						else {
+							push(tk);
+							while( true ) {
+								var tk = token();
+								if( tk != TStatement && tk != TBrClose && tk != TEof )
+									push(tk);
+								if( tk == TBrClose || tk == TEof ) break;
+							
+								var expr1 = parseExpr();
+								varExprs.push(expr1);
+								tk = token();
+							}
+							break;
+						}
+					case _: unexpected(tk);
+				}
+			}
+			return mk(EEAbstract(ident,parent,varExprs,null));
 		case "class":
 			if( inClass )
 				unexpected(TId("class"));
+			else for( i in structures ) {
+				if( ["class", "package", "import", "using", "enum", "abstract"].contains(i) )
+					continue;
+				else error(EUnexpected(i));
+			}
 
 			var hasAnotherClasses = false;
 			inClass = true;
@@ -1037,7 +1128,7 @@ class Parser {
 			}
 			mk(ESwitch(parentExpr, cases, def), p1, tokenMax);
 		
-		case 'using':
+		case "using":
 			var path = getIdent();
 			if( path == null || path.length < 1 )
 				error(EInvalidAccess(path));
@@ -1047,10 +1138,10 @@ class Parser {
 				error(ECustom('Invalid class $path'));
 
 			return mk(EUsing(c,path));
-		case 'import':
+		case "import":
 			var path = [getIdent()];
-			var isStar;
-			isStar = false;
+			var isStar = false;
+			var asIdent = null;
 			while( true ) {
 				var t = token();
 				if( t != TDot ) {
@@ -1063,6 +1154,9 @@ class Parser {
 					path.push(id);
 				case TOp('*'):
 					isStar = true;
+					var tk = token();
+					if( tk == TStatement ) push(tk);
+					else if( tk != TEof ) unexpected(tk);
 					break;
 				default:
 					unexpected(t);
@@ -1074,96 +1168,38 @@ class Parser {
 				return mk(EImportStar(path.join('.')));
 			}
 
-			var anPath:Array < String > = [];
-			var int : Int = 0;
-			for (i in path)
-			{
-				if (i == i.toLowerCase() && path.indexOf(i) == 0)
-				{
-					anPath.insert(0, '$i.');
-					//path.remove(i);
-					int++;
-				}
-				else if (i == i.toLowerCase() && path.indexOf(i) == int)
-				{
-					anPath[0] += '$i.';
-					//path.remove(i);
-					int++;
-				}
-				else if (path.indexOf(i) == int && path.indexOf(i) != 0)
-				{
-					anPath[0] += i;
-					//path.remove(i);
-				}
-				else if (path.indexOf(i) == int && int == 0)
-				{
-					anPath[0] = "";
-					anPath[0]+=i;
+			var tk = token();
+			if( tk == TStatement ) push(tk);
+			else if( Type.enumEq(tk,TId('as')) ) {
+				var tk = token();
+				switch tk {
+					case TId(s): asIdent = s;
+					case _: unexpected(tk);
 				}
 			}
 
-			var nulls = anPath[0].split('.');
-
-			for (i in nulls)
-				if (path.contains(i))
-					path.remove(i);
-
-			var maybe=maybe(TId("as"));
-			var asIdent:String=null;
-
-			if(maybe) asIdent=getIdent();
-
-			if(maybe&&(asIdent==null||asIdent==""))
-				unexpected(TId("as"));
-
-			var usedAs = maybe&&''+asIdent!="null";
-
-			var cl:String = null;
-			var eclass:Dynamic = null;
-			var og:String = null;
-			if (path.length > 1)
-			{
-				var og:String = null;
-				var c:Class<Dynamic> = Type.resolveClass(anPath[0]);
-				var property:Dynamic = Reflect.getProperty(c, path[0]);
-				
-				for(i in 1...path.length - 1)
-				{
-					property = Reflect.getProperty(property, path[i]);
+			var fullName = path.join('.');
+			var cl = Tools.resolve(fullName);
+			if( cl == null ) {
+				var fields = [];
+				var fieldCl = null;
+				for( i in path ) {
+					fields.push(i);
+					var cl = Tools.resolve(fields.join('.'));
+					if( cl != null ) {
+						fieldCl = cl;
+						break;
+					}
+				}
+				for( i in fields.length...path.length ) {
+					var field = path[i];
+					fieldCl = Reflect.getProperty(fieldCl,field);
 				}
 
-				cl = path[path.length - 1];
-				og = cl;
-				property = Reflect.getProperty(property, cl);
-				if(usedAs)
-					cl=asIdent;
-				EImport( property, cl , usedAs ? asIdent : null , anPath[0]);
+				cl = fieldCl;
 			}
-			else 
-			{
-				if(path.length == 0)
-				{
-					eclass = Type.resolveClass(anPath[0]);
-					if(eclass==null)eclass=Type.resolveEnum(anPath[0]);
-					cl = nulls[nulls.length - 1];
-					og = cl;
-					if(usedAs)
-						cl=asIdent;
-				}
-				else 
-				{
-					eclass = Type.resolveClass(anPath[0]);
-					if(eclass==null)eclass=Type.resolveEnum(anPath[0]);
-					var prop = Reflect.getProperty(eclass, path[0]);
-					eclass = prop;
-					cl = path[0];
-					og = cl;
-					if(usedAs)
-						cl=asIdent;
-				}
-			}
-			mk(EImport( eclass , cl , usedAs ? asIdent : null , anPath[0] ));
-		case 'package':
+			return mk(EImport(cl,path[path.length-1],asIdent,fullName)); 
+		case "package":
 			var path = [getIdent(false)];
 			if (!path.contains(null))
 				while( true ) {

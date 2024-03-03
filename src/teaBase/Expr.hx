@@ -76,6 +76,7 @@ enum ExprDef {
 	EImport( i : Dynamic, c : String , ?asIdent : String , ?fullName : String );
 	EImportStar( pkg : String );
 	EClass( cl : String , exprs : Array<Expr> );
+	EEAbstract( ident : String , type : String , exprs : Array<Expr> , fromParent : String );
 	EPackage( ?p : String );
 	EMeta( name : String, args : Array<Expr>, e : Expr );
 	ECheckType( e : Expr, t : CType );
@@ -100,18 +101,22 @@ class Error {
 	public var pmax : Int;
 	public var origin : String;
 	public var line : Int;
-	public function new(e, pmin, pmax, origin, line) {
+	public var currentArg : String;
+	public function new(e, pmin, pmax, origin, line, ?currentArg) {
 		this.e = e;
 		this.pmin = pmin;
 		this.pmax = pmax;
 		this.origin = origin;
 		this.line = line;
+		this.currentArg = currentArg;
 	}
 	public function toString(): String {
 		return Printer.errorToString(this);
 	}
 }
 enum ErrorDef {
+	ENullObjectReference;
+	ETypeName;
 	EDuplicate( v : String );
 	EInvalidChar( c : Int );
 	EUnexpected( s : String );
@@ -123,13 +128,20 @@ enum ErrorDef {
 	EInvalidIterator( v : String );
 	EInvalidOp( op : String );
 	EInvalidAccess( f : String );
+	ETypeNotFound( t : String );
+	EWriting;
 	EUnmatchingType( v : String , t : String , ?varn : String );
 	ECustom( msg : String );
 	EInvalidFinal( ?v : String );
 	EDoNotHaveField( cl : TeaClass , f : String );
+	EAbstractField( abs : TeaEAbstract , f : String );
 	EUnexistingField( f : Dynamic , f2 : Dynamic );
+	EPrivateField( f : String );
 	EUnknownIdentifier( s : String );
-	EUpperCase( );
+	EUpperCase;
+	ECannotUseAbs;
+	EAlreadyModule( m : String , ?fileName : String );
+	EMultipleDecl( cl : String , ?fileName : String );
 }
 
 
