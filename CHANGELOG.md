@@ -1,4 +1,8 @@
-# 11.0.618 Final
+# 17.0.618
+- 3LLua (Check [README.md](https://github.com/TahirKarabekiroglu/SuperlativeScript?tab=readme-ov-file#3LLua))
+
+
+# 11.0.618
 - Added Enum Abstract support (Check README.md)
 - Completely reworked import system to be faster and more stable
 - Completely reworked function arguments

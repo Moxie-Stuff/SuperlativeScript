@@ -29,7 +29,7 @@ abstract TeaTypedGlobalMap<K, V>(IMap<K, V>)
         for (i in SScript.global)
         {
             if (!i._destroyed)
-                i.set(key, value);
+                i.set(key, value #if THREELLUA, SScript.getMode(0) #end);
         }
     }
 
@@ -80,7 +80,7 @@ abstract TeaTypedGlobalMap<K, V>(IMap<K, V>)
         for (i in SScript.global)
         {
             if (!i._destroyed)
-                i.set(key, value);
+                i.set(key, value #if THREELLUA, SScript.getMode(0) #end);
         }
 		return v;
 	}

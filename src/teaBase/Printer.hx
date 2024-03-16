@@ -202,7 +202,7 @@ class Printer {
 			add(" while ( ");
 			expr(cond);
 			add(" )");
-		case EFor(v, it, e):
+		case EFor(v,v2,it, e):
 			add("for( "+v+" in ");
 			expr(it);
 			add(" ) ");
@@ -306,7 +306,7 @@ class Printer {
 				add(";\n");
 			}
 			add("}");
-		case EMeta(name, args, e):
+		case EMeta(_,name, args, e):
 			add("@");
 			add(name);
 			if( args != null && args.length > 0 ) {
@@ -426,6 +426,7 @@ class Printer {
 					str += "\n" + str2 + " Previous declaration here";
 				}
 				str;
+			case ESuper: "Cannot use super as value";
 		};
 		var str = e.origin + ":" + e.line + ": " + message;
 		return str;

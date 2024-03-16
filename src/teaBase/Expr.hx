@@ -55,7 +55,7 @@ enum ExprDef {
 	ECall( e : Expr, params : Array<Expr> );
 	EIf( cond : Expr, e1 : Expr, ?e2 : Expr );
 	EWhile( cond : Expr, e : Expr );
-	EFor( v : String, it : Expr, e : Expr );
+	EFor( v : String, v2 : String , it : Expr, e : Expr );
 	ECoalesce( e1 : Expr , e2 : Expr , assign : Bool);
 	ESafeNavigator( e1 : Expr , f : String );
 	EBreak;
@@ -75,10 +75,10 @@ enum ExprDef {
 	EUsing( op : Dynamic , n : String );
 	EImport( i : Dynamic, c : String , ?asIdent : String , ?fullName : String );
 	EImportStar( pkg : String );
-	EClass( cl : String , exprs : Array<Expr> );
+	EClass( cl : String , exprs : Array<Expr> , ?superCl : String );
 	EEAbstract( ident : String , type : String , exprs : Array<Expr> , fromParent : String );
 	EPackage( ?p : String );
-	EMeta( name : String, args : Array<Expr>, e : Expr );
+	EMeta( hasDot : Bool , name : String, args : Array<Expr>, e : Expr );
 	ECheckType( e : Expr, t : CType );
 }
 
@@ -142,6 +142,7 @@ enum ErrorDef {
 	ECannotUseAbs;
 	EAlreadyModule( m : String , ?fileName : String );
 	EMultipleDecl( cl : String , ?fileName : String );
+	ESuper;
 }
 
 

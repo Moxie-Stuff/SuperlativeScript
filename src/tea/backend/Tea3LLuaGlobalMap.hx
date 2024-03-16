@@ -6,18 +6,15 @@ import haxe.ds.ObjectMap;
 import haxe.ds.EnumValueMap;
 import haxe.Constraints.IMap;
 
-import tea.SScript;
-
 /**
     A custom type of map which sets values to scripts in global.
 **/
-typedef TeaStrictGlobalMap = TeaStrictTypedGlobalMap<String, Dynamic>;
+typedef Tea3LLuaGlobalMap = Tea3LLuaTypedGlobalMap<String, Dynamic>;
 
 @:transitive
 @:multiType(@:followWithAbstracts K)
-@:access(teaBase.Interp)
 @:access(tea.SScript)
-abstract TeaStrictTypedGlobalMap<K, V>(IMap<K, V>) 
+abstract Tea3LLuaTypedGlobalMap<K, V>(IMap<K, V>) 
 {
 	public function new();
 
@@ -29,8 +26,8 @@ abstract TeaStrictTypedGlobalMap<K, V>(IMap<K, V>)
         var value:Dynamic = cast value;
         for (i in SScript.global)
         {
-            if (!i._destroyed && i.interp != null)
-                i.interp.finalVariables[key] = value;
+            if (!i._destroyed)
+                i.set(key, value #if THREELLUA, SScript.getMode(1) #end);
         }
     }
 
@@ -47,8 +44,8 @@ abstract TeaStrictTypedGlobalMap<K, V>(IMap<K, V>)
         {
             for (i in SScript.global)
 			{
-				if (!i._destroyed && i.interp != null)
-					i.interp.finalVariables.remove(k);
+				if (!i._destroyed)
+					i.unset(k);
 			}
         }
 
@@ -80,11 +77,8 @@ abstract TeaStrictTypedGlobalMap<K, V>(IMap<K, V>)
         var value:Dynamic = cast v;
         for (i in SScript.global)
         {
-            for (i in SScript.global)
-			{
-				if (!i._destroyed && i.interp != null)
-					i.interp.finalVariables[key] = value;
-			}
+            if (!i._destroyed)
+                i.set(key, value #if THREELLUA, SScript.getMode(1) #end);
         }
 		return v;
 	}
@@ -101,12 +95,12 @@ abstract TeaStrictTypedGlobalMap<K, V>(IMap<K, V>)
 	@:to static inline function toObjectMap<K:{}, V>(t:IMap<K, V>):ObjectMap<K, V> 
 		return new ObjectMap<K, V>();
 
-	@:from static inline function fromStringMap<V>(map:StringMap<V>):TeaStrictTypedGlobalMap<String, V> 
+	@:from static inline function fromStringMap<V>(map:StringMap<V>):Tea3LLuaTypedGlobalMap<String, V> 
 		return cast map;
 
-	@:from static inline function fromIntMap<V>(map:IntMap<V>):TeaStrictTypedGlobalMap<Int, V> 
+	@:from static inline function fromIntMap<V>(map:IntMap<V>):Tea3LLuaTypedGlobalMap<Int, V> 
 		return cast map;
 
-	@:from static inline function fromObjectMap<K:{}, V>(map:ObjectMap<K, V>):TeaStrictTypedGlobalMap<K, V> 
+	@:from static inline function fromObjectMap<K:{}, V>(map:ObjectMap<K, V>):Tea3LLuaTypedGlobalMap<K, V> 
 		return cast map;
 }

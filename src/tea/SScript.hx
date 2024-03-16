@@ -8,6 +8,9 @@ import haxe.Timer;
 import teaBase.*;
 import teaBase.Expr;
 
+import llua.*;
+import llua.Expr3LL;
+
 #if sys
 import sys.FileSystem;
 import sys.io.File;
@@ -16,6 +19,14 @@ import sys.io.File;
 import tea.backend.*;
 
 using StringTools;
+
+private enum SScriptMode 
+{
+	HAXE;
+	#if THREELLUA
+	THREELLUA;
+	#end
+}
 
 /**
 	Sugar containing several useful information about function calls.
@@ -49,7 +60,7 @@ typedef Tea =
 	/**
 		Errors in this call. Will be empty if there are not any.
 	**/
-	public var exceptions(default, null):Array<TeaException>;
+	public var exceptions(default, null):Array<Exception>;
 
 	/**
 		How many seconds it took to call the this function.
@@ -66,6 +77,7 @@ typedef Tea =
 @:access(teaBase.Interp)
 @:access(teaBase.Parser)
 @:access(teaBase.Tools)
+@:access(llua.Interp3LL)
 @:keepSub
 class SScript
 {
@@ -79,17 +91,27 @@ class SScript
 	**/
 	public static var defaultDebug(default, set):Null<Bool> = null;
 
+	#if THREELLUA
+	/**
+		Variables in this map will be set to every Tea instance. 
+
+		HAXE mode only.
+	**/
+	#else
 	/**
 		Variables in this map will be set to every Tea instance. 
 	**/
+	#end
 	public static var globalVariables:TeaGlobalMap = new TeaGlobalMap();
 
+	#if THREELLUA
 	/**
 		Variables in this map will be set to every Tea instance.
-		
-		Variables in this map CANNOT be changed in teas, unless you remove it from the map.
+
+		3LLUA mode only.
 	**/
-	public static var strictGlobalVariables:TeaStrictGlobalMap = new TeaStrictGlobalMap();
+	public static var global3llVariables:Tea3LLuaGlobalMap = new Tea3LLuaGlobalMap();
+	#end
 	
 	/**
 		Every brewed Tea will be mapped to this map. 
@@ -149,10 +171,18 @@ class SScript
 	**/
 	public var interp(default, null):Interp;
 
+	#if THREELLUA
+	public var interp3LL(default, null):Interp3LL;
+	#end
+
 	/**
 		An unique parser for the tea to parse strings.
 	**/
 	public var parser(default, null):Parser;
+
+	#if THREELLUA
+	public var parser3LL(default, null):Parser3LL;
+	#end 
 
 	/**
 		The script to execute. Gets set automatically if you brew a `new` Tea.
@@ -184,7 +214,7 @@ class SScript
 	/**
 		Latest error in this script in parsing. Will be null if there aren't any errors.
 	**/
-	public var parsingException(default, null):TeaException;
+	public var parsingException(get, never):TeaException;
 
 	/**
 		"Class" path of this tea. Doesn't actually represent a class, it's only here for static variables.
@@ -195,13 +225,43 @@ class SScript
 	**/
 	public var classPath(get, null):String;
 
+	#if THREELLUA
+	/**	
+		Tells if this script is Lua code.
+
+		Will return false if the code is faulty.
+	**/
+	public var isLua(get, never):Null<Bool>;
+
+	/**	
+		Tells if this script is Haxe code.
+
+		Will return false if the code is faulty.
+	**/
+	public var isHaxe(get, never):Null<Bool>;
+	#end
+
+	#if THREELLUA
+	/**
+		Tells which mode is force. To force a mode, use in teas:
+		
+		```@force(three3llua)``` or ```@force(haxe)```
+		
+		To unforce: ```@force(none)```
+	**/
+	public var forcedMode(default, null):SScriptMode;
+	#end
+
 	/**
 		Package path of this tea. Gets set automatically when you use `package`.
 	**/
 	public var packagePath(get, null):String = "";
 
-	@:deprecated("parsingExceptions are deprecated, use parsingException instead")
-	var parsingExceptions(get, never):Array<Exception>;
+	//@:deprecated("parsingExceptions are deprecated, use parsingException instead")
+	var superlativeException(default, null):Exception;
+	#if THREELLUA
+	var luaException(default, null):Exception;
+	#end
 
 	@:noPrivateAccess var _destroyed(default, null):Bool;
 
@@ -224,7 +284,16 @@ class SScript
 		interp = new Interp();
 		interp.setScr(this);
 
+		#if THREELLUA
+		interp3LL = new Interp3LL();
+		interp3LL.setScr(this);
+		#end
+
 		parser = new Parser();
+
+		#if THREELLUA
+		parser3LL = new Parser3LL();
+		#end
 
 		if (preset)
 			this.preset();
@@ -232,14 +301,16 @@ class SScript
 		for (i => k in globalVariables)
 		{
 			if (i != null)
-				set(i, k);
+				set(i, k, true #if THREELLUA, HAXE #end);
 		}
 
-		for (i => k in strictGlobalVariables)
+		#if THREELLUA
+		for (i => k in global3llVariables)
 		{
 			if (i != null)
-				interp.finalVariables.set(i, k);
+				set(i, k, true, THREELLUA);
 		}
+		#end
 
 		try 
 		{
@@ -267,11 +338,13 @@ class SScript
 	**/
 	public function execute():Void
 	{
-		if (_destroyed)
+		if (_destroyed || !active)
 			return;
 
-		if (interp == null || !active)
-			return;
+		superlativeException = null;
+		#if THREELLUA
+		luaException = null;
+		#end
 
 		var origin:String = {
 			if (customOrigin != null && customOrigin.length > 0)
@@ -285,18 +358,55 @@ class SScript
 		if (script != null && script.length > 0)
 		{
 			resetInterp();
+			#if THREELLUA
+			parseScript();
+			#end
+
+			function tryHaxe()
+			{
+				try 
+				{
+					var expr:Expr = parser.parseString(script, origin);
+					var r = interp.execute(expr);
+					returnValue = r;
+				}
+				catch (e) 
+				{
+					superlativeException = e;				
+					returnValue = null;
+				}
+			}
+
+			#if THREELLUA 
+			function try3LLua()
+			{
+				try 
+				{
+					var expr:Expr3LL = parser3LL.parseString(script, origin);
+					var r = interp3LL.execute(expr);
+					returnValue = r;
+				}
+				catch (e) 
+				{
+					luaException = e;
+					returnValue = null;
+				}
+			}
+			#end
 			
-			try 
+			#if THREELLUA
+			if (forcedMode == HAXE)
+				tryHaxe();
+			else if (forcedMode == THREELLUA)
+				try3LLua();
+			else 
 			{
-				var expr:Expr = parser.parseString(script, origin);
-				var r = interp.execute(expr);
-				returnValue = r;
-			}
-			catch (e) 
-			{
-				parsingException = e;				
-				returnValue = null;
-			}
+				tryHaxe();
+				try3LLua();
+			}		
+			#else 
+			tryHaxe();
+			#end	
 		}
 	}
 
@@ -305,18 +415,21 @@ class SScript
 
 		If `key` already exists, it will be replaced.
 		@param key Variable name.
-		@param obj The object to set.
+		@param obj The object to set. Can be left blank.
 		@param setAsFinal Whether if set the object as final. If set as final, 
 		object will act as a final variable and cannot be changed in script.
+		@param forceMode If this is Haxe or Lua, the variable will be set to specified mode instead of all modes.
 		@return Returns this instance for chaining.
 	**/
-	public function set(key:String, obj:Dynamic, ?setAsFinal:Bool = false):SScript
+	public function set(key:String, ?obj:Dynamic, ?setAsFinal:Bool = false #if THREELLUA, ?forceMode:SScriptMode #end):SScript
 	{
 		if (_destroyed)
 			return null;
 
 		if (obj != null && (obj is Class) && notAllowedClasses.contains(obj))
 			throw 'Tried to set ${Type.getClassName(obj)} which is not allowed.';
+		else if (Tools3LL.keys.contains(key))
+			throw '$key is a keyword and cannot be replaced.';
 
 		function setVar(key:String, obj:Dynamic):Void
 		{
@@ -329,29 +442,38 @@ class SScript
 			if (!active)
 				return;
 
-			if (interp == null || !active)
+			if (setAsFinal)
 			{
-				if (traces)
-				{
-					if (interp == null)
-						trace("This tea is unusable!");
-					else
-						trace("This tea is not active!");
-				}
-			}
-			else
-			{
-				if (setAsFinal)
+				#if THREELLUA
+				if (forceMode == null || forceMode == HAXE)
 					interp.finalVariables[key] = obj;
-				
-				else 
-					switch Type.typeof(obj) {
-						case TFunction | TClass(_) | TEnum(_): 
-							interp.finalVariables[key] = obj;
-						case _:
-							interp.variables[key] = obj;
-					}
+				if (forceMode == null || forceMode == THREELLUA)
+					interp3LL.unchangableVars[key] = obj;
+				#else 
+				interp.finalVariables[key] = obj;
+				#end
 			}
+			else 
+				switch Type.typeof(obj) {
+					case TFunction | TClass(_) | TEnum(_): 
+						#if THREELLUA
+						if (forceMode == null || forceMode == HAXE)
+							interp.finalVariables[key] = obj;
+						if (forceMode == null || forceMode == THREELLUA)
+							interp3LL.unchangableVars[key] = obj;
+						#else 
+						interp.finalVariables[key] = obj;
+						#end
+					case _:
+						#if THREELLUA
+						if (forceMode == null || forceMode == HAXE)
+							interp.variables[key] = obj;
+						if (forceMode == null || forceMode == THREELLUA)
+							interp3LL.variables[key] = obj;
+						#else 
+						interp.variables[key] = obj;
+						#end
+				}
 		}
 
 		setVar(key, obj);
@@ -362,9 +484,10 @@ class SScript
 		This is a helper function to set classes easily.
 		For example; if `cl` is `sys.io.File` class, it'll be set as `File`.
 		@param cl The class to set.
+		@param forceMode If this is Haxe or Lua, the variable will be set to specified mode instead of all modes.
 		@return this instance for chaining.
 	**/
-	public function setClass(cl:Class<Dynamic>):SScript
+	public function setClass(cl:Class<Dynamic>, ?forceMode:SScriptMode):SScript
 	{
 		if (_destroyed)
 			return null;
@@ -388,7 +511,7 @@ class SScript
 				clName = splitCl[splitCl.length - 1];
 			}
 
-			set(clName, cl);
+			set(clName, cl #if THREELLUA, forceMode #end);
 		}
 		return this;
 	}
@@ -397,9 +520,10 @@ class SScript
 		Sets a class to this tea from a string.
 		`cl` will be formatted, for example: `sys.io.File` -> `File`.
 		@param cl The class to set.
+		@param forceMode If this is Haxe or Lua, the variable will be set to specified mode instead of all modes.
 		@return this instance for chaining.
 	**/
-	public function setClassString(cl:String):SScript
+	public function setClassString(cl:String, ?forceMode:SScriptMode):SScript
 	{
 		if (_destroyed)
 			return null;
@@ -420,7 +544,7 @@ class SScript
 				cl = cl.split('.')[cl.split('.').length - 1];
 			}
 
-			set(cl, cls);
+			set(cl, cls #if THREELLUA, forceMode #end);
 		}
 		return this;
 	}
@@ -440,8 +564,6 @@ class SScript
 	{
 		if (_destroyed)
 			return null;
-		if (interp == null)
-			return null;
 		if (!active)
 			return this;
 		if (obj == null)
@@ -456,10 +578,20 @@ class SScript
 
 		if (interp.specialObject == null)
 			interp.specialObject = {obj: null, includeFunctions: null, exclusions: null};
+		#if THREELLUA
+		if (interp3LL.specialObject == null)
+			interp3LL.specialObject = {obj: null, includeFunctions: null, exclusions: null};
+		#end
 
 		interp.specialObject.obj = obj;
 		interp.specialObject.exclusions = exclusions.copy();
 		interp.specialObject.includeFunctions = includeFunctions;
+
+		#if THREELLUA
+		interp3LL.specialObject.obj = obj;
+		interp3LL.specialObject.exclusions = exclusions.copy();
+		interp3LL.specialObject.includeFunctions = includeFunctions;
+		#end
 		return this;
 	}
 	
@@ -498,13 +630,16 @@ class SScript
 		if (_destroyed)
 			return null;
 
-		if (interp == null || !active || key == null || (!interp.variables.exists(key) && !interp.finalVariables.exists(key)))
+		if (!active || key == null)
 				return null;
 
-		if (interp.variables.exists(key))
-			interp.variables.remove(key);
-		else 
-			interp.finalVariables.remove(key);
+		for (i in [interp.finalVariables, interp.variables #if THREELLUA, interp3LL.unchangableVars, interp3LL.variables #end])
+		{
+			if (i.exists(key))
+			{
+				i.remove(key);
+			}
+		}
 
 		return this;
 	}
@@ -521,15 +656,10 @@ class SScript
 		if (_destroyed)
 			return null;
 
-		if (interp == null || !active)
+		if (!active)
 		{
 			if (traces)
-			{
-				if (interp == null)
-					trace("This tea is unusable!");
-				else
-					trace("This tea is not active!");
-			}
+				trace("This tea is not active!");
 
 			return null;
 		}
@@ -538,13 +668,19 @@ class SScript
 		if (l.exists(key))
 			return l[key];
 
-		return if (exists(key)) 
+		var r = interp.finalVariables.get(key);
+		if (r == null)
+			r = interp.variables.get(key);
+		#if THREELLUA
+		if (r == null)
 		{
-			if (interp.variables.exists(key)) 
-				interp.variables[key];
-			else 
-				interp.finalVariables[key];
-		} else null;
+			r = interp3LL.unchangableVars.get(key);
+			if (r == null)
+				r = interp3LL.variables.get(key);
+		} 
+		#end
+
+		return r;
 	}
 
 	/**
@@ -561,7 +697,7 @@ class SScript
 	{
 		if (_destroyed)
 			return {
-				exceptions: [new TeaException(new Exception((if (scriptFile != null && scriptFile.length > 0) scriptFile else "Tea instance") + " is destroyed."))],
+				exceptions: [new Exception((if (scriptFile != null && scriptFile.length > 0) scriptFile else "Tea instance") + " is destroyed.")],
 				calledFunction: func,
 				succeeded: false,
 				returnValue: null,
@@ -570,7 +706,7 @@ class SScript
 
 		if (!active)
 			return {
-				exceptions: [new TeaException(new Exception((if (scriptFile != null && scriptFile.length > 0) scriptFile else "Tea instance") + " is not active."))],
+				exceptions: [new Exception((if (scriptFile != null && scriptFile.length > 0) scriptFile else "Tea instance") + " is not active.")],
 				calledFunction: func,
 				succeeded: false,
 				returnValue: null,
@@ -598,7 +734,7 @@ class SScript
 		function pushException(e:String)
 		{
 			if (!pushedExceptions.contains(e))
-				caller.exceptions.push(new TeaException(new Exception(e)));
+				caller.exceptions.push(new Exception(e));
 			
 			pushedExceptions.push(e);
 		}
@@ -619,25 +755,15 @@ class SScript
 
 			pushException('$func is not a function');
 		}
-		else if (interp == null || !exists(func))
+		else if (fun == null || !exists(func))
 		{
-			if (interp == null)
-			{
-				if (traces)
-					trace('Interpreter is null!');
+			if (traces)
+				trace('Function $func does not exist in $scriptFile.');
 
-				pushException('Interpreter is null!');
-			}
-			else
-			{
-				if (traces)
-					trace('Function $func does not exist in $scriptFile.');
-
-				if (scriptFile != null && scriptFile.length > 0)
-					pushException('Function $func does not exist in $scriptFile.');
-				else 
-					pushException('Function $func does not exist in Tea instance.');
-			}
+			if (scriptFile != null && scriptFile.length > 0)
+				pushException('Function $func does not exist in $scriptFile.');
+			else 
+				pushException('Function $func does not exist in Tea instance.');
 		}
 		else 
 		{
@@ -661,7 +787,7 @@ class SScript
 			catch (e)
 			{
 				caller = oldCaller;
-				caller.exceptions.insert(0, new TeaException(e));
+				caller.exceptions.insert(0, e);
 			}
 		}
 
@@ -678,9 +804,6 @@ class SScript
 		if (_destroyed)
 			return null;
 		if (!active)
-			return this;
-
-		if (interp == null)
 			return this;
 
 		for (i in interp.variables.keys())
@@ -704,13 +827,16 @@ class SScript
 		if (!active)
 			return false;
 
-		if (interp == null)
-			return false;
 		var l = locals();
 		if (l.exists(key))
 			return l.exists(key);
 
-		return interp.variables.exists(key) || interp.finalVariables.exists(key);
+		for (i in [interp.variables, interp.finalVariables #if THREELLUA, interp3LL.variables, interp3LL.unchangableVars #end])
+		{
+			if (i.exists(key))
+				return true;
+		}
+		return false;
 	}
 
 	/**
@@ -744,33 +870,40 @@ class SScript
 	{
 		if (_destroyed)
 			return;
-		if (interp == null)
-			return;
 
 		interp.locals = #if haxe3 new Map() #else new Hash() #end;
 		while (interp.declared.length > 0)
 			interp.declared.pop();
 		while (interp.pushedVars.length > 0)
 			interp.pushedVars.pop();
+
+		#if THREELLUA
+		interp3LL.locals = #if haxe3 new Map() #else new Hash() #end;
+		while (interp3LL.declared.length > 0)
+			interp3LL.declared.pop();
+		#end
 	}
 
 	function destroyInterp():Void 
 	{
 		if (_destroyed)
 			return;
-		if (interp == null)
-			return;
 
 		interp.locals = null;
 		interp.variables = null;
 		interp.finalVariables = null;
 		interp.declared = null;
+
+		#if THREELLUA
+		interp3LL.locals = null;
+		interp3LL.variables = null;
+		interp3LL.unchangableVars = null;
+		interp3LL.declared = null;
+		#end
 	}
 
 	function doFile(scriptPath:String):Void
 	{
-		parsingException = null;
-
 		if (_destroyed)
 			return;
 
@@ -833,7 +966,10 @@ class SScript
 		if (string == null || string.length < 1 || BlankReg.match(string))
 			return this;
 
-		parsingException = null;
+		superlativeException = null;
+		#if THREELLUA
+		luaException = null;
+		#end
 
 		var time = Timer.stamp();
 		try 
@@ -855,44 +991,78 @@ class SScript
 			if (og == null || og.length < 1)
 				og = "SScript";
 
-			if (!active || interp == null)
-				return null;
-
 			resetInterp();
+		
+			script = string;
 
-			try
-			{	
-				script = string;
-
-				if (customOrigin != null && customOrigin.length > 0)
-				{
-					if (ID != null)
-						global.remove(Std.string(ID));
-					global[customOrigin] = this;
-				}
-				else if (scriptFile != null && scriptFile.length > 0)
-				{
-					if (ID != null)
-						global.remove(Std.string(ID));
-					global[scriptFile] = this;
-				}
-				else if (script != null && script.length > 0)
-				{
-					if (ID != null)
-						global.remove(Std.string(ID));
-					global[script] = this;
-				}
-
-				var expr:Expr = parser.parseString(script, og);
-				var r = interp.execute(expr);
-				returnValue = r;
-			}
-			catch (e)
+			if (customOrigin != null && customOrigin.length > 0)
 			{
-				script = "";
-				parsingException = e;
-				returnValue = null;
+				if (ID != null)
+					global.remove(Std.string(ID));
+				global[customOrigin] = this;
 			}
+			else if (scriptFile != null && scriptFile.length > 0)
+			{
+				if (ID != null)
+					global.remove(Std.string(ID));
+				global[scriptFile] = this;
+			}
+			else if (script != null && script.length > 0)
+			{
+				if (ID != null)
+					global.remove(Std.string(ID));
+				global[script] = this;
+			}
+
+			#if THREELLUA
+			parseScript();
+			#end
+
+			function tryHaxe()
+			{
+				try 
+				{
+					var expr:Expr = parser.parseString(script, og);
+					var r = interp.execute(expr);
+					returnValue = r;
+				}
+				catch (e) 
+				{
+					superlativeException = e;				
+					returnValue = null;
+				}
+			}
+
+			#if THREELLUA
+			function try3LLua()
+			{
+				try 
+				{
+					var expr:Expr3LL = parser3LL.parseString(script, og);
+					var r = interp3LL.execute(expr);
+					returnValue = r;
+				}
+				catch (e) 
+				{
+					luaException = e;
+					returnValue = null;
+				}
+			}
+			#end
+			
+			#if THREELLUA
+			if (forcedMode == HAXE)
+				tryHaxe();
+			else if (forcedMode == THREELLUA)
+				try3LLua();
+			else 
+			{
+				tryHaxe();
+				try3LLua();
+			}	
+			#else 
+			tryHaxe();
+			#end		
 			
 			lastReportedTime = Timer.stamp() - time;
  
@@ -917,10 +1087,10 @@ class SScript
 		if (scriptFile != null && scriptFile.length > 0)
 			return scriptFile;
 
-		return "[Tea Tea]";
+		return "Tea";
 	}
 
-	#if (sys)
+	#if sys
 	/**
 		Checks for teas in the provided path and returns them as an array.
 
@@ -1017,27 +1187,51 @@ class SScript
 		
 		for (i in interp.pushedVars) 
 		{
-			if (strictGlobalVariables.exists(i))
-				strictGlobalVariables.remove(i);
+			if (globalVariables.exists(i))
+				globalVariables.remove(i);
 		}
 
 		clear();
 		resetInterp();
 		destroyInterp();
 
+		superlativeException = null;
+		#if THREELLUA
+		luaException = null;
+		forcedMode = null;
+		#end
 		customOrigin = null;
 		parser = null;
 		interp = null;
+		#if THREELLUA
+		parser3LL = null;
+		interp3LL = null;
+		#end
 		script = null;
 		scriptFile = null;
 		active = false;
 		notAllowedClasses = null;
 		lastReportedTime = -1;
 		ID = null;
-		parsingException = null;
 		returnValue = null;
 		_destroyed = true;
 	}
+
+	#if THREELLUA
+	function parseScript()
+	{
+		if (script == null || script.length < 1)
+			return;
+
+		var script = this.script.toLowerCase().trim();
+		if (script.indexOf('@force(threellua)') > -1)
+			setMode(1);
+		else if (script.indexOf('@force(haxe)') > -1)
+			setMode(0);
+		else 
+			setMode(-1);
+	}
+	#end
 
 	function get_variables():Map<String, Dynamic>
 	{
@@ -1062,6 +1256,21 @@ class SScript
 
 		return classPath = p;
 	}
+
+	#if THREELLUA
+	function setMode(mode:Int):Void
+	{
+		if (_destroyed)
+			return;
+
+		forcedMode = switch mode 
+		{ 
+			case 0: HAXE;
+			case 1: THREELLUA;
+			case _: null;
+		}
+	}
+	#end
 
 	function setPackagePath(p):String
 	{
@@ -1117,6 +1326,18 @@ class SScript
 		return defaultDebug = value;
 	}
 
+	static function getMode(mode:Int):SScriptMode
+	{
+		return switch mode 
+		{ 
+			case 0: HAXE;
+			#if THREELLUA
+			case 1: THREELLUA;
+			#end
+			case _: null;
+		}
+	}
+
 	function get_parsingExceptions():Array<Exception> 
 	{
 		if (_destroyed)
@@ -1125,6 +1346,44 @@ class SScript
 		if (parsingException == null)
 			return [];
 
-		return @:privateAccess [parsingException.toException()];
+		return [];
+	}
+
+	#if THREELLUA
+	function get_isLua():Null<Bool> 
+	{
+		if (_destroyed)
+			return null;
+
+		return forcedMode == THREELLUA && superlativeException == null;
+	}
+
+	function get_isHaxe():Null<Bool> 
+	{
+		if (_destroyed)
+			return null;
+
+		return forcedMode == HAXE && superlativeException == null;
+	}
+	#end
+
+	function get_parsingException():TeaException 
+	{
+		if (_destroyed)
+			return null;
+
+		#if THREELLUA
+		if (forcedMode == HAXE && superlativeException == null)
+			return null;
+		else if (forcedMode == THREELLUA && luaException == null)
+			return null;
+		else if (forcedMode == null && (luaException == null || superlativeException == null))
+			return null;
+		#else
+		if (superlativeException == null)
+			return null;
+		#end
+
+		return new TeaException(#if THREELLUA luaException #else null #end, superlativeException);
 	}
 }

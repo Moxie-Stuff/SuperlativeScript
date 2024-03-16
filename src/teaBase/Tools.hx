@@ -54,6 +54,29 @@ class Tools {
 		return cl;
 	}
 
+	public static function resolveType( field : Dynamic ) {
+		if( field != null ) {
+			var n = Type.getEnumName(field);
+			if( n == null ) n = Type.getClassName(field);
+			if( n == null ) {
+				if( Std.isOfType(field,Int) )
+					n = 'Int';
+				else if( Std.isOfType(field,Float) )
+					n = 'Float';
+				else if( Std.isOfType(field,String) )
+					n = 'String';
+				else if( Std.isOfType(field,Array) )
+					n = 'Array';
+				else if( Std.isOfType(field,Bool) )
+					n = 'Bool';
+				else if( Std.isOfType(field,Dynamic) )
+					n = 'Dynamic';
+			}
+			return n;
+		}
+		return "null";
+	}
+
 	public static function ctToType( ct : CType ):String {
 		var ctToType:(ct:CType)->String = function(ct)
 		{

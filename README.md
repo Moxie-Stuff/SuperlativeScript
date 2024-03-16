@@ -49,6 +49,43 @@ var script:tea.SScript = new tea.SScript("script.hx"); // Has the same contents 
 var randomNumber:Float = script.call('returnRandom').returnValue;
 ```
 
+## 3LLua 
+With SuperlativeScript 17.0.618; a new mode is added to as an alternative to Haxe, 3LLua.
+3LLua is basically Lua with Haxe features. It can handle, create and access Haxe objects.
+However, it is not the top priority and because of this it is disabled by default and cannot be used if not enabled.
+
+To enable, add `THREELLUA` to defines or if you have an OpenFL project add it to project.xml.
+
+You can force interpreter to use a mode, with `@force` at the start of your scripts.
+For example, to force 3LLua mode you can use `@force(threellua)` at the start of your scripts (To force haxe, use `@force(haxe)`. Anything other than `haxe` and `threellua` will be ignored).
+Interpreter will detect and force the provided mode, and your scripts won't be affected and interpreter will be slightly faster.
+
+3LLua is not meant to replace Lua, as it is extremely limited compared to its parent.
+Lua scripts will not work with this mode, as it only exists if you want to use a language similar to Lua with Haxe features.
+
+Example:
+```haxe
+class Main {
+	static function main() 
+	{
+		var s = new tea.SScript();
+		tea.SScript.global3llVariables['Main'] = Main;
+
+		s.doString("
+			function a(b) 
+				if b > 1 then
+					print(b + 1);
+				else 
+					print(b)
+				end
+			end
+
+			a(2); -- 3
+		");
+	}
+}
+```
+
 ## Classes
 With SuperlativeScript 10.0.618, classes are supported in teas and can be accessed from other teas.
 

@@ -40,6 +40,7 @@ private enum SScriptNull {
 }
 
 @:keepSub
+@:access(teaBase.TeaClass)
 @:access(teaBase.Parser)
 @:access(tea.SScript)
 class Interp {
@@ -80,6 +81,7 @@ class Interp {
 
 	var inPublic : Bool = false;
 	var inPrivate : Bool = false;
+	var inClass : Bool = false;
 
 	var inStatic : Bool = false;
 
@@ -91,6 +93,8 @@ class Interp {
 
 	var inCall : Bool = false;
 	var currentArg : String;
+
+	var curClass : String;
 
 	public inline function setScr(s)
 	{
@@ -145,6 +149,8 @@ class Interp {
 	var inFunc : Bool = false;
 	var abortFunc : Bool = false;
 	var returnedNothing : Bool = true;
+
+	var newFunc = { func : null , arguments : null };
 
 	function initOps() {
 		var me = this;
@@ -507,6 +513,7 @@ class Interp {
 		return null;
 	}
 
+	var shouldAbort = false;
 	function duplicate<T>( h : #if haxe3 Map < String, T > #else Hash<T> #end ) {
 		#if haxe3
 		var h2 = new Map();
@@ -549,7 +556,7 @@ class Interp {
 		#end
 	}
 
-	function resolve( id : String ) : Dynamic {
+	function resolve( id : String ) : Dynamic { 
 		var l = locals.get(id);
 		if( l != null )
 			return l.r;
@@ -562,6 +569,11 @@ class Interp {
 			var field = Reflect.getProperty(specialObject.obj,id);
 			if( field != null && (specialObject.includeFunctions || Type.typeof(field) != TFunction) && (specialObject.exclusions == null || !specialObject.exclusions.contains(id)) )
 				return field;
+		}
+		if( finalVariables.exists("this") ) {
+			var v = finalVariables["this"];
+			if( Reflect.hasField(v,id) )
+				return Reflect.getProperty(v,id);
 		}
 		var v = finalVariables.get(id);
 		if( finalVariables.exists(id) )
@@ -648,7 +660,7 @@ class Interp {
 				fileName = script.scriptFile;
 			EABSTRACTS[ident] = { fileName : fileName , tea : eabstract }
 			return if( strictVar ) error(EUnexpected("enum")) else null;
-		case EClass(cl,e):
+		case EClass(cl,e,extend):
 			if( classes.contains(cl) || eabstracts.contains(cl) )
 			{
 				var tea = null;
@@ -661,27 +673,30 @@ class Interp {
 			else if( cl == cl.toLowerCase() )
 				error(ETypeName);
 
+			inClass = true;
 			for( e in e ) {
 				var expr = e.e;
 				switch expr {
 					case EPublic(e):
 						switch e.e {
 							case EStatic(_,_):
-							case _: error(EUnexpected("public"));
+							case _: 
 						}
 					case EPrivate(e):
 						switch e.e {
 							case EStatic(_,_):
-							case _: error(EUnexpected("private"));
+							case _: 
 						}
 					case EStatic(_,_):
-					case _: error(ECustom("Expected }"));
+					case _: 
 				}
 			}
 
 			classes.push(cl);
 			pushedClasses.push(cl);
 			script.setClassPath(cl);
+			curClass = cl;
+			var v = null;
 			if( !STATICPACKAGES.exists(cl) )
 			{
 				var fileName = null;
@@ -690,10 +705,19 @@ class Interp {
 				else if( script.scriptFile != null && script.scriptFile.length > 0 )
 					fileName = script.scriptFile;
 
-				var v = new TeaClass(cl);
+				var name = finalVariables.get(extend);
+				if( name == null )
+					name = Type.resolveClass(extend);
+				if( extend != null && name == null )
+					error(ETypeNotFound(extend));
+
+				v = new TeaClass(cl);
 				STATICPACKAGES.set(cl,{ fileName : fileName , tea : v });
 			}
-			for( e in e ) expr(e);
+			for( e in e ) switch e.e {
+				case _: expr(e);
+			}
+			inClass = false;
 			return if( strictVar ) error(EUnexpected("class")) else null;
 		case EPublic(e):
 			if( inPublic && !inStatic )
@@ -811,7 +835,7 @@ class Interp {
 				{
 					if( !pushedVars.contains(n) ) {
 						pushedVars.push(n);
-						SScript.strictGlobalVariables.set(n,expr1);
+						SScript.globalVariables.set(n,expr1);
 					}
 				}
 			}
@@ -822,7 +846,16 @@ class Interp {
 			var old = declared.length;
 			var v = null;
 			for( e in exprs ) {
-				v = expr(e);
+				if( !shouldAbort )
+				{
+					v = expr(e);
+				}
+				else 
+				{
+					shouldAbort = false;
+					restore(old);
+					break;
+				}
 			}
 			restore(old);
 			return v;
@@ -868,7 +901,7 @@ class Interp {
 			{
 				args.push(expr(p));
 			}
-
+			
 			switch( Tools.expr(e) ) {
 			case EField(e,f):
 				strictVar = true;
@@ -898,8 +931,8 @@ class Interp {
 			if( strictVar ) return error(EUnexpected("do"));
 			doWhileLoop(econd,e);
 			return null;
-		case EFor(v,it,e):
-			forLoop(v,it,e);
+		case EFor(v,v2,it,e):
+			forLoop(v,v2,it,e);
 			return null;
 		case EBreak:
 			throw SBreak;
@@ -907,7 +940,7 @@ class Interp {
 			throw SContinue;
 		case EReturnEmpty:
 			if(inFunc) {
-				abortFunc = true;
+				shouldAbort = true;
 				return null;
 			} else 
 			return error(EUnexpected("return"));
@@ -1078,6 +1111,7 @@ class Interp {
 					returnedNothing = true;
 				return r;
 			};
+			var oldf = f;
 			var f = Reflect.makeVarArgs(f);
 			if( name != null ) {
 				if( depth == 0 ) {
@@ -1091,7 +1125,7 @@ class Interp {
 						{
 							if( !pushedVars.contains(name) ) {
 								pushedVars.push(name);
-								SScript.strictGlobalVariables.set(name,f);
+								SScript.globalVariables.set(name,f);
 							}
 						}
 					}
@@ -1159,6 +1193,7 @@ class Interp {
 			var a = new Array();
 			for( e in params )
 				a.push(expr(e));
+
 			return cnew(cl,a);
 		case EThrow(e):
 			throw expr(e);
@@ -1219,17 +1254,25 @@ class Interp {
 			if( !match )
 				val = def == null ? null : expr(def);
 			return val;
-		case EMeta(n, _, e):
+		case EMeta(dot,n,args,e):
+			if( !dot && n == "force" )
+			{
+				var arg = args[0];
+				if( arg == null )
+					error(EUnexpected(Parser.tokenString(TMeta(false,n))));
+			}
+			var emptyExpr = false;
+			if( e == null ) emptyExpr = true;
 			if(n == "privateAccess")
 				hasPrivateAccess = true;
 			else if(n == "noPrivateAccess")
 				noPrivateAccess = false;
-			var e = expr(e);
+			var e = if( emptyExpr ) null else expr(e);
 			if(n == "privateAccess")
 				hasPrivateAccess = false;
 			else if(n == "noPrivateAccess")
 				noPrivateAccess = false;
-			return e;
+			return if( emptyExpr && strictVar ) error(ECustom("Excepted expression")) else e;
 		case ECheckType(e,_):
 			return expr(e);
 		}
@@ -1307,6 +1350,9 @@ class Interp {
 	}
 
 	function makeIterator( v : Dynamic ) : Iterator<Dynamic> {
+		if( v is IMap )
+			return new haxe.iterators.MapKeyValueIterator(v);
+
 		#if((flash && !flash9) || (php && !php7 && haxe_ver < '4.0.0'))
 		if( v.iterator != null ) v = v.iterator();
 		#else
@@ -1316,13 +1362,31 @@ class Interp {
 		return cast v;
 	}
 
-	function forLoop(n,it,e) {
+	function forLoop(n,n2,it,e) {
 		var old = declared.length;
 		declared.push({ n : n, old : locals.get(n) });
+		if( n2 != null )
+			declared.push({ n : n2, old : locals.get(n2) });
 		strictVar = true;
 		var it = makeIterator(expr(it));
 		while( it.hasNext() ) {
-			locals.set(n,{ r : it.next() });
+			var next = it.next();
+			var key = next;
+			if( !Reflect.hasField(next,"key") && !Reflect.hasField(next,"value") && n2 != null )
+			{
+				error(ECustom(Tools.resolveType(next) + " has no field key"));
+			}
+			if( Reflect.hasField(next,"key") )
+			{
+				if( n2 == null )
+					key = Reflect.getProperty(next,"value");
+				else
+					key = Reflect.getProperty(next,"key");
+			}
+
+			locals.set(n,{ r : key });
+			if( Reflect.hasField(next,"value") && n2 != null )
+				locals.set(n2,{ r : Reflect.getProperty(next,"value") });
 			try {
 				expr(e);
 			} catch( err : Stop ) {

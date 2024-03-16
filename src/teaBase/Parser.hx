@@ -21,6 +21,7 @@
  */
 package teaBase;
 import haxe.Exception;
+import tea.SScript;
 import teaBase.Expr;
 using StringTools;
 
@@ -44,7 +45,7 @@ enum Token {
 	TQDoubleAssign;
 	TQuestion;
 	TDoubleDot;
-	TMeta( s : String );
+	TMeta( hasDot : Bool , s : String );
 }
 
 @:keep
@@ -98,6 +99,10 @@ class Parser {
 	var oldTokenMin : Int;
 	var oldTokenMax : Int;
 	var tokens : List<{ min : Int, max : Int, t : Token }>;
+
+	var script : SScript;
+
+	function setScr(scr) script = scr;
 
 	public function new() {
 		line = 1;
@@ -249,10 +254,10 @@ class Parser {
 		case EUnop(_,prefix,e): !prefix && isBlock(e);
 		case EWhile(_,e): isBlock(e);
 		case EDoWhile(_,e): isBlock(e);
-		case EFor(_,_,e): isBlock(e);
+		case EFor(_,_,_,e): isBlock(e);
 		case EReturn(e): e != null && isBlock(e);
 		case ETry(_, _, _, e): isBlock(e);
-		case EMeta(_, _, e): isBlock(e);
+		case EMeta(_,_,_,e): if( e == null ) true else isBlock(e);
 		default: false;
 		}
 	}
@@ -297,8 +302,10 @@ class Parser {
 					case EClass(_,_): 
 					case EFunction(_,_,_,_):
 					case EVar(_,_,_,_): // allowed
+					case EPublic(_) | EPrivate(_):
 					case _: unexpected(tk);
 				}
+				push(tk);
 			}
 		}
 	}
@@ -547,9 +554,10 @@ class Parser {
 				default:
 				}
 			return parseExprNext(mk(EArrayDecl(a), p1));
-		case TMeta(id):
+		case TMeta(dot,id):
 			var args = parseMetaArgs();
-			return mk(EMeta(id, args, parseExpr()),p1);
+			var e = try parseExpr() catch(e) null;
+			return mk(EMeta(dot,id,args,e),p1);
 		default:
 			return unexpected(tk);
 		}
@@ -602,8 +610,8 @@ class Parser {
 	function mapCompr( tmp : String, e : Expr ) {
 		if( e == null ) return null;
 		var edef = switch( expr(e) ) {
-		case EFor(v, it, e2):
-			EFor(v, it, mapCompr(tmp, e2));
+		case EFor(v, v2,it, e2):
+			EFor(v, v2,it, mapCompr(tmp, e2));
 		case EWhile(cond, e2):
 			EWhile(cond, mapCompr(tmp, e2));
 		case EDoWhile(cond, e2):
@@ -753,6 +761,9 @@ class Parser {
 			var exprs = [];
 			var classes = [];
 			var ident = getIdent();
+			var path = [];
+			var extended = false;
+			var extend = null;
 
 			var token = null; 
 			while( true ) {
@@ -785,8 +796,9 @@ class Parser {
 			}
 			inClass = false;
 			isClassScript = true;
-			classes.insert(0, mk(EClass(ident, exprs)));
-			return mk(hasAnotherClasses ? EBlock(classes) : EClass(ident,exprs));
+			var e = EClass(ident,exprs,extend);
+			classes.insert(0, mk(e));
+			return mk(hasAnotherClasses ? EBlock(classes) : e);			
 		case "public" | "private":
 			if( inPublic && id == "public" )
 				error(ECustom('Unexpected public'));
@@ -950,11 +962,18 @@ class Parser {
 		case "for":
 			ensure(TPOpen);
 			var vname = getIdent();
+			var vname2 = null;
+			var tk = token();
+			switch tk {
+				case TOp("=>"): 
+					vname2 = getIdent();
+				case _: push(tk);
+			}
 			ensureToken(TId("in"));
 			var eiter = parseExpr();
 			ensure(TPClose);
 			var e = parseExpr();
-			mk(EFor(vname,eiter,e),p1,pmax(e));
+			mk(EFor(vname,vname2,eiter,e),p1,pmax(e));
 		case "break": mk(EBreak);
 		case "continue": mk(EContinue);
 		case "else": unexpected(TId(id));
@@ -1478,7 +1497,7 @@ class Parser {
 					case TBrClose: break;
 					default: unexpected(t);
 					}
-				case TMeta(name):
+				case TMeta(_,name):
 					if( meta == null ) meta = [];
 					meta.push({ name : name, params : parseMetaArgs() });
 				default:
@@ -1788,13 +1807,14 @@ class Parser {
 				return TOp("=");
 			case '@'.code:
 				char = readChar();
+				var dot = char == ':'.code;
 				if( idents[char] || char == ':'.code ) {
 					var id = char == ':'.code ? "" : String.fromCharCode(char);
 					while( true ) {
 						char = readChar();
 						if( !idents[char] ) {
 							this.char = char;
-							return TMeta(id);
+							return TMeta(dot,id);
 						}
 						id += String.fromCharCode(char);
 					}
@@ -1912,7 +1932,7 @@ class Parser {
 		case TQDoubleAssign: "??=";
 		case TQuestion: "?";
 		case TDoubleDot: ":";
-		case TMeta(id): "@" + id;
+		case TMeta(dot,id): "@" + (if( dot ) ":" else "") + id;
 		case TEol: null;
 		}
 	}
