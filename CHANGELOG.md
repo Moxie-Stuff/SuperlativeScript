@@ -1,3 +1,7 @@
+# 17.1.618
+- Custom origins are no longer unique
+- Added default funcs (Check `SScript.defaultFun`)
+
 # 17.0.618
 - 3LLua (Check [README.md](https://github.com/TahirKarabekiroglu/SuperlativeScript?tab=readme-ov-file#3LLua))
 

@@ -117,11 +117,27 @@ class SScript
 		Every brewed Tea will be mapped to this map. 
 	**/
 	public static var global(default, null):Map<String, SScript> = [];
+
+	/**
+		If not null, when a script is created the function with this name in script will be called.
+
+		If this value is changed, from now on every script's default function name will be the value.
+		
+		Default is "main".
+	**/
+	public static var defaultFun(default, set):String = "main";
 	
 	static var IDCount(default, null):Int = 0;
 
 	static var BlankReg(get, never):EReg;
 	
+	/**
+		If not null, when a script is created the function with this name in script will be called.
+
+		Default is "main".
+	**/
+	public var defaultFunc:String = null;
+
 	/**
 		This is a custom origin you can set.
 
@@ -280,6 +296,8 @@ class SScript
 			typeCheck = defaultTypeCheck;
 		if (defaultDebug != null)
 			debugTraces = defaultDebug;
+		if (defaultFun != null)
+			defaultFunc = defaultFun;
 
 		interp = new Interp();
 		interp.setScr(this);
@@ -375,6 +393,9 @@ class SScript
 					superlativeException = e;				
 					returnValue = null;
 				}
+				
+				if (defaultFunc != null)
+					call(defaultFunc);
 			}
 
 			#if THREELLUA 
@@ -909,14 +930,9 @@ class SScript
 
 		if (scriptPath == null || scriptPath.length < 1 || BlankReg.match(scriptPath))
 		{
-			if (customOrigin != null)
-				global[customOrigin] = this;
-			else 
-			{
-				ID = IDCount + 1;
-				IDCount++;
-				global[Std.string(ID)] = this;
-			}
+			ID = IDCount + 1;
+			IDCount++;
+			global[Std.string(ID)] = this;
 			return;
 		}
 
@@ -994,14 +1010,8 @@ class SScript
 			resetInterp();
 		
 			script = string;
-
-			if (customOrigin != null && customOrigin.length > 0)
-			{
-				if (ID != null)
-					global.remove(Std.string(ID));
-				global[customOrigin] = this;
-			}
-			else if (scriptFile != null && scriptFile.length > 0)
+			
+			if (scriptFile != null && scriptFile.length > 0)
 			{
 				if (ID != null)
 					global.remove(Std.string(ID));
@@ -1031,6 +1041,9 @@ class SScript
 					superlativeException = e;				
 					returnValue = null;
 				}
+
+				if (defaultFunc != null)
+					call(defaultFunc);
 			}
 
 			#if THREELLUA
@@ -1158,8 +1171,6 @@ class SScript
 			global.remove(scriptFile);
 		else if (global.exists(script) && script != null && script.length > 0)
 			global.remove(script);
-		if (global.exists(customOrigin))
-			global.remove(customOrigin);
 		if (global.exists(Std.string(ID)))
 			global.remove(script);
 		
@@ -1297,8 +1308,6 @@ class SScript
 	{
 		if (_destroyed)
 			return null;
-		if (global.exists(value))
-			throw "Origin " + value + " already exists in global.";
 		
 		@:privateAccess parser.origin = value;
 		return customOrigin = value;
@@ -1385,5 +1394,16 @@ class SScript
 		#end
 
 		return new TeaException(#if THREELLUA luaException #else null #end, superlativeException);
+	}
+
+	static function set_defaultFun(value:String):String 
+	{
+		for (i in global) 
+		{
+			if (i.active && !i._destroyed)
+				i.defaultFunc = value;
+		}
+
+		return defaultFun = value;
 	}
 }
