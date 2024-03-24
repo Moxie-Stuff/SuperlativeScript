@@ -4,7 +4,7 @@
   "license": "Apache",
   "tags": ["hscript", "3llua"],
   "description": "SuperlativeScript, an easy-to-use Haxe Script and 3LLua parser.",
-  "version": "17.1.618",
+  "version": "17.2.618",
   "classPath": "src/",
   "releasenote": "Check CHANGELOG.md",
   "contributors": ["TahirKarabekiroglu"],

@@ -1,3 +1,7 @@
+# 17.2.618
+- Fix compiling error
+
+
 # 17.1.618
 - Custom origins are no longer unique
 - Added default funcs (Check `SScript.defaultFun`)

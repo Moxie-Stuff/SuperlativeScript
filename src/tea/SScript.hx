@@ -1400,7 +1400,7 @@ class SScript
 	{
 		for (i in global) 
 		{
-			if (i.active && !i._destroyed)
+			if (i != null && i.active && !i._destroyed)
 				i.defaultFunc = value;
 		}
 

@@ -371,7 +371,7 @@ class Printer {
 			case EInvalidAccess(f): "Invalid access to field " + f;
 			case ETypeNotFound(t): 
 				var str = "Type not found : " + t;
-				#if !macro
+				#if (!macro && !DISABLED_MACRO_SUPERLATIVE)
 				var split = t.split('.');
 				var similarNames:Array<Array<Dynamic>> = [];
 				var allNames = Tools.allNamesAvailable;

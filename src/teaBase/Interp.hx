@@ -1255,12 +1255,14 @@ class Interp {
 				val = def == null ? null : expr(def);
 			return val;
 		case EMeta(dot,n,args,e):
+			#if THREELLUA
 			if( !dot && n == "force" )
 			{
 				var arg = args[0];
 				if( arg == null )
 					error(EUnexpected(Parser.tokenString(TMeta(false,n))));
 			}
+			#end
 			var emptyExpr = false;
 			if( e == null ) emptyExpr = true;
 			if(n == "privateAccess")
